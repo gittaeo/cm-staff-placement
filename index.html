@@ -552,6 +552,8 @@ async function parseXlsx(buf){
   const ssRaw=await get("xl/sharedStrings.xml");
   if(!wbRaw||!relsRaw) throw new Error("엑셀 내부 구조를 읽지 못했습니다.");
   const wb=xmlDoc(dec.decode(wbRaw));
+  const wbPr=wb.querySelector("workbookPr");
+  const date1904=!!(wbPr&&wbPr.getAttribute("date1904")==="1");
   const sheets=[];
   wb.querySelectorAll("sheet").forEach(sh=>{ sheets.push({rid:sh.getAttribute("r:id"), name:sh.getAttribute("name")||"시트"}); });
   const rels=xmlDoc(dec.decode(relsRaw));
@@ -588,7 +590,7 @@ async function parseXlsx(buf){
     out.push({name:sh.name, rows});
   }
   if(!out.length) throw new Error("데이터가 있는 시트를 찾지 못했습니다.");
-  return out;
+  return {sheets:out, date1904};
 }
 function detectDelim(text){
   const first=text.split(/\r?\n/)[0]||"";
@@ -615,7 +617,7 @@ function parseCSV(text){
   if(cur!==""||row.length){ row.push(cur); if(row.some(c=>c.trim()!=="")) rows.push(row); }
   const grid=rows.map(r=>r.map((v,i)=>({i,val:cellNum(v)})));
   if(!grid.length) throw new Error("CSV에 읽을 데이터가 없습니다.");
-  return [{name:"시트1", rows:grid}];
+  return {sheets:[{name:"시트1", rows:grid}], date1904:false};
 }
 async function parseWorkbook(file){
   const buf=await file.arrayBuffer();
@@ -629,16 +631,22 @@ async function parseWorkbook(file){
   throw new Error("지원 형식은 .xlsx / .xlsm / .csv 입니다. 구버전 .xls는 Excel에서 [다른 이름으로 저장 > .xlsx]로 저장해 주세요.");
 }
 function pad2(n){ return String(n).padStart(2,"0"); }
-function dateFromExcel(n){ const d=new Date(Date.UTC(1899,11,30)+Math.round(n)*86400000); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function dateFromExcel(n,date1904){
+  const serial=date1904?n+1462:n;
+  const d=new Date(Date.UTC(1899,11,30)+Math.round(serial)*86400000);
+  return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+}
 function normDate(v){
   if(v==null||v==="") return null;
-  if(typeof v==="number") return dateFromExcel(v);
-  const s=String(v).trim();
+  if(typeof v==="number"){ if(!isFinite(v)) return null; return dateFromExcel(v,!!(ui.import&&ui.import.date1904)); }
+  const s=String(v).replace(/[\u00A0\u200B\u3000\uFEFF]/g," ").trim();
   if(!s) return null;
-  let m=s.match(/(\d{4})[.\-\/년\s]+(\d{1,2})[.\-\/월\s]+(\d{1,2})[일\s]*/);
+  let m=s.match(/(\d{4})\s*[.\-\/년\s]\s*(\d{1,2})\s*[.\-\/월\s]\s*(\d{1,2})[일\s]*(?:[\sT\-].*)?/);
   if(m) return m[1]+"-"+pad2(m[2])+"-"+pad2(m[3]);
   m=s.match(/^(\d{4})(\d{2})(\d{2})/);
   if(m) return m[1]+"-"+m[2]+"-"+m[3];
+  m=s.match(/^(\d{1,2})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{4})\b/);
+  if(m&&parseInt(m[1],10)<=31&&parseInt(m[2],10)<=12) return m[3]+"-"+pad2(m[2])+"-"+pad2(m[1]);
   return null;
 }
 function splitRange(v){
@@ -668,8 +676,9 @@ async function handleUpload(file){
   if(!file) return;
   try{
     toast("파일을 읽는 중입니다...");
-    const sheets=await parseWorkbook(file);
-    ui.import={step:"map", file, sheets, selSheets:new Set(sheets.map(s=>s.name)), hasHeader:true, map:guessMapping(sheets,true), result:null, replace:true};
+    const parsed=await parseWorkbook(file);
+    const sheets=parsed.sheets;
+    ui.import={step:"map", file, sheets, selSheets:new Set(sheets.map(s=>s.name)), hasHeader:true, map:guessMapping(sheets,true), result:null, replace:true, date1904:!!parsed.date1904};
     renderOverview();
     toast("파일을 읽었습니다. 컬럼 매핑을 확인한 뒤 임포트해 주세요.","ok");
   }catch(e){
@@ -683,28 +692,77 @@ function colLabel(col,hdr,hasHeader){
   return letter+(hasHeader&&hdr[col]!=null&&hdr[col]!==""? " · "+String(hdr[col]).trim().slice(0,12) : "");
 }
 function previewCells(sheet,limit){
-  const rows=sheet.rows.slice(0,limit);
-  const hasHeader=ui.import.hasHeader;
+  const imp=ui.import;
+  const hasHeader=imp.hasHeader;
+  const rows=sheet.rows.slice(hasHeader?1:0, (hasHeader?1:0)+limit);
   let maxCol=-1;
   rows.forEach(r=>r.forEach(c=>{ if(c.i>maxCol) maxCol=c.i; }));
   const hdr=hasHeader&&sheet.rows[0]?sheet.rows[0]:[];
   const hdrMap={}; hdr.forEach(c=>hdrMap[c.i]=c.val);
+  const dateCols={};
+  if(imp.map.start!=null) dateCols[imp.map.start]=true;
+  if(imp.map.end!=null) dateCols[imp.map.end]=true;
   const cols=[];
   for(let i=0;i<=maxCol;i++) cols.push(i);
   let html='<div class="preview-scroll"><table><thead><tr>';
   cols.forEach(i=>{
-    const mapped=Object.values(ui.import.map).includes(i);
+    const mapped=Object.values(imp.map).includes(i);
     html+='<th class="'+(mapped?"mapped":"")+'">'+esc(colLabel(i,hdrMap,hasHeader))+(mapped?" ✓":"")+'</th>';
   });
   html+='</tr></thead><tbody>';
   rows.forEach(r=>{
     const map={}; r.forEach(c=>map[c.i]=c.val);
     html+='<tr>';
-    cols.forEach(i=>{ html+='<td>'+(map[i]!=null?esc(typeof map[i]==="number"?String(map[i]):map[i]):"")+'</td>'; });
+    cols.forEach(i=>{
+      const raw=map[i];
+      if(raw==null||raw===""){ html+='<td></td>'; return; }
+      if(dateCols[i]){
+        const nd=normDate(raw);
+        if(nd) html+='<td class="mapped" title="원본: '+esc(typeof raw==="number"?String(raw):raw)+'">'+fmt(nd)+'</td>';
+        else html+='<td><span class="badge red">⚠</span> '+esc(typeof raw==="number"?String(raw):String(raw))+'</td>';
+      }else{
+        html+='<td>'+esc(typeof raw==="number"?String(raw):String(raw))+'</td>';
+      }
+    });
     html+='</tr>';
   });
   html+='</tbody></table></div>';
   return html;
+}
+function dateReadCheck(){
+  const imp=ui.import;
+  const sample=[]; const cap=120;
+  for(const sh of imp.sheets){
+    if(!imp.selSheets.has(sh.name)) continue;
+    for(let r=(imp.hasHeader?1:0);r<sh.rows.length;r++){
+      sample.push(sh.rows[r]);
+      if(sample.length>=cap) break;
+    }
+    if(sample.length>=cap) break;
+  }
+  const count=idx=>{
+    if(idx==null||idx<0) return null;
+    let ok=0,total=0;
+    sample.forEach(row=>{
+      const c=row.find(x=>x.i===idx);
+      if(c==null||c.val==null||c.val==="") return;
+      total++;
+      if(normDate(c.val)) ok++;
+    });
+    return {ok,total};
+  };
+  return {start:count(imp.map.start), end:count(imp.map.end)};
+}
+function dateChips(dc){
+  const chip=(c,lbl)=>{
+    if(!c) return '<span class="chip gray">'+lbl+' 미매핑</span>';
+    const cls=c.ok?"green":(c.total?"red":"gray");
+    return '<span class="chip '+cls+'">'+lbl+' 인식 '+c.ok+'/'+c.total+'</span>';
+  };
+  let out='<span class="muted small">날짜 인식 확인</span> '+chip(dc.start,"시작일")+' '+chip(dc.end,"종료일")+'<span class="muted small">(샘플 '+Math.min(120,(dc.start&&dc.start.total)+(dc.end&&dc.end.total))+'개 중)</span>';
+  const bad=(dc.start&&dc.start.total>0&&dc.start.ok===0)||(dc.end&&dc.end.total>0&&dc.end.ok===0);
+  if(bad) out+='<span class="badge red">날짜 형식을 인식하지 못했습니다. 예: 2026.01.01, 2026-01-01, 2026/01/01, 20260101</span>';
+  return out;
 }
 function renderUploadPanel(){
   const host=document.getElementById("ov-upload");
@@ -745,6 +803,7 @@ function renderUploadPanel(){
         '<div><div class="field"><label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="imp-header"'+(imp.hasHeader?" checked":"")+' onchange="toggleHeader(this)" style="width:auto"> 첫 행은 머리글(헤더)</label></div><div class="field"><label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="imp-replace"'+(imp.replace?" checked":"")+' onchange="toggleReplace(this)" style="width:auto"> 기존 데이터를 업로드 데이터로 대체</label><div class="hint">체크 해제하면 기존 데이터에 추가됩니다.</div></div></div>'+
       '</div>'+
       '<div class="map-grid">'+mapGrid+'</div>'+
+      '<div class="filters" style="margin:8px 0">'+dateChips(dateReadCheck())+'</div>'+
       '<div class="btn-row" style="margin:10px 0"><button class="btn primary" onclick="importRows()">임포트 ('+total+'행)</button><span class="muted small">필수(*): 현장명 · 직원명 · 시작일 · 종료일</span></div>'+
       previewCells(sheets[0],15)+
       '</div></div>';
@@ -1141,29 +1200,190 @@ function toggleAll(cls,on){
 function xlsEscape(s){
   return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
-function buildWorkbook(sheets){
-  const ns='xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"';
-  let xml='<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>';
-  xml+='<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '+ns+' xmlns:x="urn:schemas-microsoft-com:office:excel">';
-  xml+='<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EFF7" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style></Styles>';
-  sheets.forEach(sh=>{
-    xml+='<Worksheet ss:Name="'+xlsEscape(sh.name).slice(0,30)+'"><Table>';
-    (sh.widths||[]).forEach(w=>{ xml+='<Column ss:AutoFitWidth="0" ss:Width="'+w+'"/>'; });
-    sh.rows.forEach((r,i)=>{
-      xml+='<Row>';
-      r.forEach(c=>{
-        const isStr=typeof c==="string";
-        xml+='<Cell'+(i===0?' ss:StyleID="h"':'')+'><Data ss:Type="'+(isStr?"String":"Number")+'">'+xlsEscape(isStr?c:(c==null?"":c))+'</Data></Cell>';
-      });
-      xml+='</Row>';
-    });
-    xml+='</Table></Worksheet>';
-  });
-  xml+='</Workbook>';
-  return xml;
+let crcTable=null;
+function crc32(data){
+  if(!crcTable){
+    crcTable=new Uint32Array(256);
+    for(let n=0;n<256;n++){
+      let c=n;
+      for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);
+      crcTable[n]=c>>>0;
+    }
+  }
+  let c=0xFFFFFFFF;
+  for(let i=0;i<data.length;i++) c=(crcTable[(c^data[i])&0xFF]^(c>>>8))>>>0;
+  return (c^0xFFFFFFFF)>>>0;
 }
-function download(name,content,mime){
-  const blob=new Blob(["\uFEFF"+content],{type:(mime||"application/vnd.ms-excel")+";charset=utf-8"});
+async function deflateRaw(bytes){
+  if(typeof CompressionStream==="undefined") throw new Error("이 브라우저는 xlsx 생성이 불가능합니다. 최신 Chrome/Edge를 사용해 주세요.");
+  const cs=new CompressionStream("deflate-raw");
+  const stream=new Blob([bytes]).stream().pipeThrough(cs);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function makeZip(files){
+  const enc=new TextEncoder();
+  const localParts=[], centralParts=[];
+  let offset=0;
+  for(const f of files){
+    const nameBytes=enc.encode(f.name);
+    const comp=await deflateRaw(f.data);
+    const crc=crc32(f.data);
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);
+    lh.setUint16(4,20,true);
+    lh.setUint16(6,0x0800,true);
+    lh.setUint16(8,8,true);
+    lh.setUint32(14,crc,true);
+    lh.setUint32(18,comp.length,true);
+    lh.setUint32(22,f.data.length,true);
+    lh.setUint16(26,nameBytes.length,true);
+    lh.setUint16(28,0,true);
+    const local=new Uint8Array(30+nameBytes.length+comp.length);
+    local.set(new Uint8Array(lh.buffer),0);
+    local.set(nameBytes,30);
+    local.set(comp,30+nameBytes.length);
+    localParts.push(local);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);
+    ch.setUint16(4,20,true);
+    ch.setUint16(6,20,true);
+    ch.setUint16(8,0x0800,true);
+    ch.setUint16(10,8,true);
+    ch.setUint32(16,crc,true);
+    ch.setUint32(20,comp.length,true);
+    ch.setUint32(24,f.data.length,true);
+    ch.setUint16(28,nameBytes.length,true);
+    ch.setUint32(42,offset,true);
+    const cent=new Uint8Array(46+nameBytes.length);
+    cent.set(new Uint8Array(ch.buffer),0);
+    cent.set(nameBytes,46);
+    centralParts.push(cent);
+    offset+=local.length;
+  }
+  const cdSize=centralParts.reduce((s,p)=>s+p.length,0);
+  const eocd=new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0,0x06054b50,true);
+  eocd.setUint16(8,files.length,true);
+  eocd.setUint16(10,files.length,true);
+  eocd.setUint32(12,cdSize,true);
+  eocd.setUint32(16,offset,true);
+  const out=new Uint8Array(offset+cdSize+22);
+  let p=0;
+  localParts.forEach(x=>{ out.set(x,p); p+=x.length; });
+  centralParts.forEach(x=>{ out.set(x,p); p+=x.length; });
+  out.set(new Uint8Array(eocd.buffer),p);
+  return out;
+}
+function colLetter(n){
+  let s=""; n++;
+  while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); }
+  return s;
+}
+function serialFromISO(iso){
+  const t=Date.parse(iso+"T00:00:00Z");
+  return Math.floor((t-Date.UTC(1899,11,30))/86400000);
+}
+function sheetXml(rows){
+  let s='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+  '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'+
+  '<sheetFormatPr defaultRowHeight="15"/><sheetData>';
+  rows.forEach((r,ri)=>{
+    s+='<row r="'+(ri+1)+'">';
+    r.forEach((v,ci)=>{
+      if(v==null||v==="") return;
+      const ref=colLetter(ci)+(ri+1);
+      if(typeof v==="object"&&v&&v.d){
+        s+='<c r="'+ref+'" s="1"><v>'+serialFromISO(v.d)+'</v></c>';
+      }else if(typeof v==="number"){
+        s+='<c r="'+ref+'"><v>'+v+'</v></c>';
+      }else{
+        s+='<c r="'+ref+'" t="inlineStr"'+(ri===0?' s="2"':'')+'><is><t xml:space="preserve">'+xlsEscape(v)+'</t></is></c>';
+      }
+    });
+    s+='</row>';
+  });
+  s+='</sheetData></worksheet>';
+  return s;
+}
+function stylesXml(){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+  '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy.mm.dd"/></numFmts>'+
+  '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'+
+  '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'+
+  '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'+
+  '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+  '<cellXfs count="3">'+
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
+  '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'+
+  '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+
+  '</cellXfs>'+
+  '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'+
+  '</styleSheet>';
+}
+function contentTypesXml(n){
+  let s='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+  '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+  '<Default Extension="xml" ContentType="application/xml"/>'+
+  '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>';
+  for(let i=1;i<=n;i++) s+='<Override PartName="/xl/worksheets/sheet'+i+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+  s+='<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+  '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'+
+  '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'+
+  '</Types>';
+  return s;
+}
+function rootRelsXml(){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+  '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'+
+  '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'+
+  '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>'+
+  '</Relationships>';
+}
+function workbookXml(names){
+  let s='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>';
+  names.forEach((n,i)=>{ s+='<sheet name="'+xlsEscape(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>'; });
+  s+='</sheets></workbook>';
+  return s;
+}
+function workbookRelsXml(n){
+  let s='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+  for(let i=1;i<=n;i++) s+='<Relationship Id="rId'+i+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+i+'.xml"/>';
+  s+='<Relationship Id="rId'+(n+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+  s+='</Relationships>';
+  return s;
+}
+function coreXml(){
+  const now=new Date().toISOString();
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'+
+  '<dc:creator>cm-staff-placement</dc:creator><cp:lastModifiedBy>cm-staff-placement</cp:lastModifiedBy>'+
+  '<dcterms:created xsi:type="dcterms:W3CDTF">'+now+'</dcterms:created>'+
+  '<dcterms:modified xsi:type="dcterms:W3CDTF">'+now+'</dcterms:modified></cp:coreProperties>';
+}
+function appXml(){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>cm-staff-placement</Application><DocSecurity>0</DocSecurity><Company>cm-staff-placement</Company><AppVersion>1.0</AppVersion></Properties>';
+}
+async function buildXlsx(sheets){
+  const enc=new TextEncoder();
+  const sanitize=name=>String(name).replace(/[\\\/\?\*\[\]:]/g,"_").replace(/^(_+|')/,"").slice(0,31);
+  const files=[
+    {name:"[Content_Types].xml", data:enc.encode(contentTypesXml(sheets.length))},
+    {name:"_rels/.rels", data:enc.encode(rootRelsXml())},
+    {name:"xl/workbook.xml", data:enc.encode(workbookXml(sheets.map(s=>sanitize(s.name))))},
+    {name:"xl/_rels/workbook.xml.rels", data:enc.encode(workbookRelsXml(sheets.length))},
+    {name:"xl/styles.xml", data:enc.encode(stylesXml())}
+  ];
+  sheets.forEach((sh,i)=>{ files.push({name:"xl/worksheets/sheet"+(i+1)+".xml", data:enc.encode(sheetXml(sh.rows))}); });
+  files.push({name:"docProps/core.xml", data:enc.encode(coreXml())});
+  files.push({name:"docProps/app.xml", data:enc.encode(appXml())});
+  return makeZip(files);
+}
+function downloadBytes(name,bytes){
+  const blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob); a.download=name;
   document.body.appendChild(a); a.click();
@@ -1187,7 +1407,7 @@ function exportSites(){
       rows:[[KIND[k]+" 직원","현장","직무/직급","시작일","종료일"]].concat(
         state.placements.filter(p=>p.kind===k&&ids.includes(p.siteId)).sort((a,b)=>a.start<b.start?-1:1).map(p=>{
           const st=staffById(p.staffId);
-          return [st?st.name:"", siteById(p.siteId).name, st?st.job:"", fmt(p.start), fmt(p.end)];
+          return [st?st.name:"", siteById(p.siteId).name, st?st.job:"", {d:p.start}, {d:p.end}];
         })
       )
     });
@@ -1202,11 +1422,11 @@ function exportSites(){
       chgRows.sort((a,b)=>a.changeDate<b.changeDate?-1:1).map(c=>{
         const st=staffById(c.staffId);
         const bef=c.before? c.before.siteName+" ("+fmt(c.before.start)+" ~ "+fmt(c.before.end)+")" : "신규";
-        return [st?st.name:"", bef, c.after.siteName+" ("+fmt(c.after.start)+" ~ "+fmt(c.after.end)+")", fmt(c.changeDate), c.changeReason];
+        return [st?st.name:"", bef, c.after.siteName+" ("+fmt(c.after.start)+" ~ "+fmt(c.after.end)+")", {d:c.changeDate}, c.changeReason];
       })
     )
   });
-  download("현장별_배치현황_"+ymd()+".xml", buildWorkbook(sheets));
+  buildXlsx(sheets).then(b=>downloadBytes("현장별_배치현황_"+ymd()+".xlsx", b));
   toast("현장별 엑셀을 내려받았습니다.","ok");
 }
 function exportStaff(){
@@ -1223,23 +1443,23 @@ function exportStaff(){
     rows:[["직원","현장","구분","시작일","종료일","상태"]].concat(
       state.placements.filter(p=>ids.includes(p.staffId)).sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1)).map(p=>{
         const st=staffById(p.staffId);
-        return [st?st.name:"", siteById(p.siteId).name, KIND[p.kind], fmt(p.start), fmt(p.end), statusOf(p).t];
+        return [st?st.name:"", siteById(p.siteId).name, KIND[p.kind], {d:p.start}, {d:p.end}, statusOf(p).t];
       })
     )
   });
   sheets.push({
     name:"계약배치", widths:[16,60,16,16],
     rows:[["직원","현장","시작일","종료일"]].concat(
-      state.placements.filter(p=>p.kind==="contract"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, fmt(p.start), fmt(p.end)])
+      state.placements.filter(p=>p.kind==="contract"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, {d:p.start}, {d:p.end}])
     )
   });
   sheets.push({
     name:"실제배치", widths:[16,60,16,16],
     rows:[["직원","현장","시작일","종료일"]].concat(
-      state.placements.filter(p=>p.kind==="actual"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, fmt(p.start), fmt(p.end)])
+      state.placements.filter(p=>p.kind==="actual"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, {d:p.start}, {d:p.end}])
     )
   });
-  download("직원별_배치현황_"+ymd()+".xml", buildWorkbook(sheets));
+  buildXlsx(sheets).then(b=>downloadBytes("직원별_배치현황_"+ymd()+".xlsx", b));
   toast("직원별 엑셀을 내려받았습니다.","ok");
 }
 
