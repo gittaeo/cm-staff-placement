@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>현장 직원 배치 관리</title>
+<style>
+:root{
+  --bg:#f4f6f9; --surface:#ffffff; --border:#e3e7ee; --border2:#d3dae4;
+  --text:#1f2937; --muted:#6b7280; --faint:#9aa3af;
+  --primary:#2f5d8a; --primary-soft:#e8eff7; --primary-border:#bcd3ea;
+  --blue:#2f6fdf; --blue-bg:#eaf1fd;
+  --green:#1d9d74; --green-bg:#e6f7f0;
+  --amber:#c77d1c; --amber-bg:#fdf3e3;
+  --red:#d64545; --red-bg:#fdecec;
+  --gray:#5b6472; --gray-bg:#eef1f5;
+  --radius:8px; --shadow:0 1px 3px rgba(16,24,40,.08);
+  --mono:ui-monospace,Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--text)}
+a{color:var(--primary)}
+.hidden{display:none!important}
+
+header{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.head-inner{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:-.3px}
+.brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#2f5d8a,#4a7bb0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800}
+.brand .sub{font-size:12px;color:var(--muted);font-weight:400;margin-top:1px}
+.tabs{display:flex;gap:4px;margin-left:8px;flex-wrap:wrap}
+.tab{padding:8px 16px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;font-weight:600}
+.tab:hover{background:var(--gray-bg);color:var(--text)}
+.tab.active{background:var(--primary-soft);color:var(--primary);border-color:var(--primary-border)}
+.head-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:16px;color:var(--muted)}
+.icon-btn:hover{background:var(--gray-bg)}
+
+main{max-width:1240px;margin:0 auto;padding:20px}
+.view{display:none}
+.view.active{display:block}
+.section-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:6px 0 14px}
+.section-title h2{margin:0;font-size:19px;letter-spacing:-.3px}
+.section-title p{margin:0;color:var(--muted);font-size:13px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.card .num{font-size:24px;font-weight:800;letter-spacing:-.5px}
+.card .lbl{font-size:12px;color:var(--muted);margin-top:2px}
+.card.click{cursor:pointer;transition:transform .05s ease}
+.card.click:hover{outline:2px solid var(--primary-border)}
+.card.alert .num{color:var(--red)}
+.card.ok .num{color:var(--green)}
+.card.blue .num{color:var(--blue)}
+.card.amber .num{color:var(--amber)}
+
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+.panel-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fbfcfe}
+.panel-head h3{margin:0;font-size:15px}
+.panel-head .spacer{margin-left:auto}
+.panel-body{padding:16px}
+.panel-body.tight{padding:0}
+
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.filters label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.filters select,.filters input{padding:6px 10px;border:1px solid var(--border2);border-radius:6px;background:var(--surface)}
+.filters input[type=search]{min-width:180px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600;line-height:1.7;white-space:nowrap}
+.chip.blue{background:var(--blue-bg);color:var(--blue)}
+.chip.green{background:var(--green-bg);color:var(--green)}
+.chip.amber{background:var(--amber-bg);color:var(--amber)}
+.chip.red{background:var(--red-bg);color:var(--red)}
+.chip.gray{background:var(--gray-bg);color:var(--gray)}
+.chip.toggle{cursor:pointer;border:1px solid transparent}
+.chip.toggle.on{outline:2px solid var(--red);outline-offset:1px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+th{background:var(--gray-bg);color:var(--gray);font-weight:600;white-space:nowrap}
+tbody tr:hover{background:#fafbfd}
+tr.row-click{cursor:pointer}
+.empty{padding:36px 16px;text-align:center;color:var(--faint);font-size:14px}
+.warn-row{background:#fff7f7}
+.warn-row:hover{background:#fff1f1}
+.warn-row td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+.muted{color:var(--muted)}
+.faint{color:var(--faint)}
+.small{font-size:12px}
+.mono{font-family:var(--mono);font-size:12px}
+
+.site-gap{border-bottom:10px solid var(--bg)}
+
+.tl{display:flex;gap:10px;align-items:center;padding:7px 16px;border-bottom:1px solid var(--border)}
+.tl:hover{background:#fafbfd}
+.tl-label{flex:0 0 240px;display:flex;flex-direction:column;gap:1px}
+.tl-name{font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px}
+.tl-meta{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tl-chart{flex:1 1 auto;position:relative}
+.tl-row{position:relative;height:34px;margin:2px 0}
+.tl-row::before{content:"";position:absolute;left:0;right:0;top:0;bottom:0;background:repeating-linear-gradient(to right,#fff,#fff calc(100%/8 - 1px),#f2f4f8 calc(100%/8 - 1px),#f2f4f8 calc(100%/8));border:1px solid var(--border);border-radius:6px}
+.bar{position:absolute;top:4px;bottom:4px;border-radius:6px;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;min-width:0;z-index:2;box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.bar.contract{background:var(--blue)}
+.bar.actual{background:var(--green)}
+.bar.pending{background:var(--amber)}
+.bar.overlap{background:repeating-linear-gradient(45deg,var(--red),var(--red) 6px,#b83b3b 6px,#b83b3b 12px)}
+.ov-overlay{position:absolute;top:4px;bottom:4px;border-radius:6px;background:repeating-linear-gradient(45deg,rgba(214,69,69,.9),rgba(214,69,69,.9) 5px,rgba(184,59,59,.9) 5px,rgba(184,59,59,.9) 10px);z-index:3;pointer-events:none}
+.ticks{position:relative;height:18px;margin:4px 16px 0 266px;border-bottom:1px solid var(--border2);font-size:10px;color:var(--faint)}
+.ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+
+.btn{border:1px solid var(--border2);border-radius:7px;padding:7px 14px;background:var(--surface);font-size:13px;font-weight:600;color:var(--text)}
+.btn:hover{background:var(--gray-bg)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:#274f79}
+.btn.danger{background:#fff;border-color:#e5b8b8;color:var(--red)}
+.btn.danger:hover{background:var(--red-bg)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+.badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.badge.confirm{background:var(--gray-bg);color:var(--gray)}
+.badge.demo{background:#f1e9f7;color:#7a4f9e}
+.badge.red{background:var(--red-bg);color:var(--red)}
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal{background:var(--surface);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.18);width:100%;max-width:720px}
+.modal-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.modal-head h3{margin:0;font-size:16px;flex:1}
+.modal-body{padding:18px;max-height:70vh;overflow:auto}
+.modal-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:#fbfcfe;border-radius:0 0 10px 10px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--gray);font-weight:600;margin-bottom:5px}
+.field .req{color:var(--red)}
+.field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:6px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--primary-border);border-color:var(--primary)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+.hint{font-size:12px;color:var(--faint);margin-top:4px}
+
+.toast-wrap{position:fixed;right:20px;top:70px;z-index:200;display:flex;flex-direction:column;gap:8px}
+.toast{background:#1f2937;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.2);max-width:360px;animation:slidein .18s ease}
+.toast.err{background:#a93232}
+.toast.ok{background:#17805f}
+@keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+
+.legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:4px;vertical-align:-2px}
+
+.ai-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.ai-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+.ai-card.full{grid-column:1/-1}
+.ai-card-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.ai-card-head h3{margin:0;font-size:15px;flex:1}
+.ai-card-body{padding:14px 16px}
+.ai-item{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fbfcfe}
+.ai-item:last-child{margin-bottom:0}
+.ai-item h4{margin:0 0 6px;font-size:13px}
+.ai-item .grid3{font-size:12px;color:var(--text);margin-bottom:6px}
+.ai-item .grid3 b{color:var(--gray);font-weight:600}
+.ai-summary{background:var(--primary-soft);border-left:3px solid var(--primary);padding:8px 10px;border-radius:6px;font-size:13px;margin-top:6px}
+.ai-summary .src{font-size:11px;color:var(--primary);font-weight:600}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--primary-border);border-top-color:var(--primary);border-radius:50%;animation:rot .7s linear infinite;vertical-align:-2px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.pill{display:inline-block;margin-left:6px;padding:0 7px;border-radius:10px;font-size:11px;font-weight:600}
+.pill.ai{background:var(--primary-soft);color:var(--primary)}
+.pill.rule{background:var(--gray-bg);color:var(--gray)}
+
+.sub-tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.sub-tab{padding:8px 14px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-weight:600;font-size:13px}
+.sub-tab.active{background:var(--surface);color:var(--primary);border-color:var(--border);box-shadow:0 -1px 2px rgba(0,0,0,.03)}
+.export-block{border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;background:#fbfcfe}
+.export-block h4{margin:0 0 8px;font-size:14px}
+.check-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 14px;margin-bottom:10px}
+.check-list label{display:flex;gap:6px;align-items:center;font-size:13px;padding:3px 0}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.sd-on{background:var(--green)}
+.sd-will{background:var(--amber)}
+.sd-end{background:var(--faint)}
+
+.upload-zone{border:2px dashed var(--border2);border-radius:10px;padding:24px 18px;text-align:center;background:#fbfcfe;cursor:pointer}
+.upload-zone:hover{border-color:var(--primary);background:var(--primary-soft)}
+.upload-zone .big{font-size:15px;font-weight:700;margin-bottom:6px}
+.privacy-badge{font-size:12px;font-weight:700;padding:4px 10px;border-radius:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.privacy-badge.local{background:#e6f7f0;color:#17805f}
+.privacy-badge.ext{background:var(--red-bg);color:var(--red)}
+.privacy-badge .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.preview-scroll{max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:6px}
+.preview-scroll table th,.preview-scroll table td{white-space:nowrap;font-size:12px}
+th.mapped{background:var(--primary-soft);color:var(--primary)}
+.import-note{background:var(--primary-soft);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.import-note b{color:var(--primary)}
+
+@media (max-width:880px){.tl-chart{overflow-x:auto}.tl{flex-direction:column;align-items:stretch}.tl-chart{min-width:500px}.ticks{margin-left:0}.ai-cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-inner">
+    <div class="brand">
+      <div class="logo">배치</div>
+      <div>
+        <div>현장 직원 배치 관리 <span class="pill confirm">프로토타입</span></div>
+        <div class="sub">건설사업관리용역 · 계약배치 · 실제배치 · 변경 예정 배치</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="overview" onclick="switchTab('overview')">전체 배치 현황</button>
+      <button class="tab" data-tab="manage" onclick="switchTab('manage')">배치 관리</button>
+      <button class="tab" data-tab="ai" onclick="switchTab('ai')">AI 점검·요약</button>
+    </nav>
+    <div class="head-right">
+      <span id="privacy-badge" class="privacy-badge local"><span class="dot"></span>로컬 전용</span>
+      <button class="icon-btn" title="설정" onclick="openSettings()">⚙</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="view-overview" class="view active"></section>
+  <section id="view-manage" class="view"></section>
+  <section id="view-ai" class="view"></section>
+</main>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="toast-wrap"></div>
+
+<script>
+const STORAGE_KEY = "siteStaffPlacement.v1";
+const KIND = {contract:"계약", actual:"실제", pending:"변경예정"};
+const KIND_ORDER = ["contract","actual","pending"];
+const KIND_COLOR = {contract:"blue", actual:"green", pending:"amber"};
+
+let state = load();
+let ui = {
+  tab: "overview",
+  ovSite: "all",
+  ovSearch: "",
+  ovKind: "all",
+  ovOverlapOnly: false,
+  mSub: "sites",
+  mSiteFilter: "all",
+  mStaffFilter: "all",
+  mKindFilter: "all",
+  aiResult: null,
+  aiSource: "rule",
+  aiTime: null,
+  import: {step:"pick", file:null, sheets:[], selSheets:new Set(), hasHeader:true, map:{}, result:null, replace:true},
+};
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){ const s = JSON.parse(raw); if(s && s.version===1) return s; }
+  }catch(e){}
+  return seed();
+}
+function save(){
+  state.settings = state.settings || {apiKey:"", model:"gemini-2.0-flash", external:false};
+  if(state.settings.external==null) state.settings.external=false;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function seed(){
+  const s1 = {id:"s1", name:"부산오페라하우스", hostRole:"확인필요", consortium:["[확인 필요]"], consortiumStaff:[]};
+  const s2 = {id:"s2", name:"제주공항 관제동 신축사업", hostRole:"확인필요", consortium:["[확인 필요]"], consortiumStaff:[]};
+  const st = (id,name,job)=>({id,name,job});
+  const staff = [
+    st("st1","이경민","건축3"), st("st2","남연만","건축4"), st("st3","김재수","토목2"),
+    st("st4","서무홍","기계"), st("st5","안남섭","건축 책임"), st("st6","임동환","건축"),
+    st("st7","김민석","건축2"), st("st8","박서준","건축5"),
+  ];
+  const pl = (id,siteId,staffId,kind,start,end,demo)=>({id,siteId,staffId,kind,start,end,demo:!!demo});
+  const placements = [
+    pl("p1","s1","st1","contract","2025-02-17","2027-03-01"),
+    pl("p2","s1","st2","contract","2020-02-07","2027-03-01"),
+    pl("p3","s1","st3","contract","2026-02-11","2027-01-16"),
+    pl("p4","s1","st4","contract","2026-01-01","2026-08-01"),
+    pl("p5","s2","st5","contract","2025-02-01","2026-10-19"),
+    pl("p6","s2","st6","contract","2025-02-01","2026-10-29"),
+    pl("p7","s1","st7","contract","2026-01-01","2026-12-31",true),
+    pl("p8","s2","st7","actual","2026-03-01","2026-09-30",true),
+    pl("p9","s2","st7","pending","2026-10-01","2027-12-31",true),
+    pl("p10","s1","st8","contract","2026-04-01","2027-03-01",true),
+    pl("p11","s1","st8","actual","2026-05-01","2027-02-15",true),
+    pl("p12","s1","st3","actual","2026-03-01","2027-01-16",true),
+  ];
+  const changes = [
+    {id:"c1", staffId:"st3", before:{siteName:"부산오페라하우스", start:"2026-01-01", end:"2026-12-31"}, after:{siteName:"부산오페라하우스", start:"2026-02-11", end:"2027-01-16"}, changeDate:"2025-12-20", changeReason:"투입 인원 조정으로 착수일이 연기되었습니다 (예시)", demo:true},
+    {id:"c2", staffId:"st7", before:{siteName:"부산오페라하우스", start:"2026-01-01", end:"2026-12-31"}, after:{siteName:"제주공항 관제동 신축사업", start:"2026-10-01", end:"2027-12-31"}, changeDate:"2026-08-05", changeReason:"부산오페라하우스 공정 축소로 제주 관제동으로 전환 예정입니다 (예시)", demo:true},
+  ];
+  return {version:1, settings:{apiKey:"", model:"gemini-2.0-flash", external:false}, sites:[s1,s2], staff, placements, changes};
+}
+
+function siteById(id){ return state.sites.find(s=>s.id===id); }
+function staffById(id){ return state.staff.find(s=>s.id===id); }
+function placementById(id){ return state.placements.find(p=>p.id===id); }
+
+function fmt(d){ if(!d) return ""; const [y,m,dd]=d.split("-"); return y+"."+m+"."+dd; }
+function todayISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function statusOf(p){
+  const t = todayISO();
+  if(p.start <= t && t <= p.end) return {t:"배치중", cls:"sd-on"};
+  if(t < p.start) return {t:"예정", cls:"sd-will"};
+  return {t:"종료", cls:"sd-end"};
+}
+
+function toast(msg,type){
+  const el=document.createElement("div");
+  el.className="toast "+(type||"");
+  el.textContent=msg;
+  document.getElementById("toast-root").appendChild(el);
+  setTimeout(()=>{ el.style.opacity="0"; el.style.transition="opacity .3s"; setTimeout(()=>el.remove(),320); },3200);
+}
+function openModal(html,title){
+  document.getElementById("modal-root").innerHTML =
+    '<div class="modal-backdrop" onclick="if(event.target===this)hideModal()">'+
+    '<div class="modal"><div class="modal-head"><h3>'+title+'</h3><button class="icon-btn" onclick="hideModal()">✕</button></div>'+
+    '<div class="modal-body">'+html+'</div>'+
+    '<div class="modal-foot"><button class="btn" onclick="hideModal()">닫기</button></div></div></div>';
+}
+function hideModal(){ document.getElementById("modal-root").innerHTML=""; }
+function fieldVal(id){ const el=document.getElementById(id); return el ? el.value : ""; }
+
+function switchTab(tab){
+  ui.tab=tab;
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-"+tab).classList.add("active");
+  if(tab==="overview") renderOverview();
+  if(tab==="manage") renderManage();
+  if(tab==="ai") renderAI();
+}
+function goManage(staffId,siteId,placementId){
+  ui.mSub="placements";
+  ui.mStaffFilter = staffId || "all";
+  ui.mSiteFilter = siteId || "all";
+  switchTab("manage");
+  renderManage();
+  if(placementId){
+    const r=document.getElementById("placement-row-"+placementId);
+    if(r){ r.scrollIntoView({block:"center"}); r.style.background="#eef4fb"; setTimeout(()=>{r.style.background="";},2200); }
+  }
+}
+
+function calcOverlaps(){
+  const byStaff={};
+  state.placements.forEach(p=>{ (byStaff[p.staffId]=byStaff[p.staffId]||[]).push(p); });
+  const out=[];
+  Object.keys(byStaff).forEach(sid=>{
+    const ps=byStaff[sid].filter(p=>p.start&&p.end);
+    const ranges=[];
+    for(let i=0;i<ps.length;i++){
+      for(let j=i+1;j<ps.length;j++){
+        const a=ps[i], b=ps[j];
+        if(a.siteId===b.siteId) continue;
+        const os=a.start<=b.end&&b.start<=a.end;
+        if(!os) continue;
+        ranges.push({a,b,start:a.start<b.start?b.start:a.start, end:a.end<b.end?a.end:b.end});
+      }
+    }
+    if(ranges.length) out.push({staffId:sid, staff:staffById(sid), conflicts:ranges});
+  });
+  return out;
+}
+function overlapRangesFor(sid){
+  const hits=calcOverlaps().filter(o=>o.staffId===sid);
+  const ranges=[];
+  hits.forEach(h=>h.conflicts.forEach(c=>ranges.push({start:c.start,end:c.end})));
+  return ranges;
+}
+
+function renderOverview(){
+  const focusId=document.activeElement&&document.activeElement.id?document.activeElement.id:null;
+  const t=todayISO();
+  const placements=state.placements;
+  const cnt = p=>placements.filter(x=>x.kind===p).length;
+  const onStaff = new Set();
+  placements.forEach(p=>{ if(p.start&&p.end&&p.start<=t&&t<=p.end) onStaff.add(p.staffId); });
+  const overlaps=calcOverlaps();
+  const ovCount=overlaps.reduce((s,o)=>s+o.conflicts.length,0);
+
+  let filtered=[...placements];
+  if(ui.ovSite!=="all") filtered=filtered.filter(p=>p.siteId===ui.ovSite);
+  if(ui.ovSearch){
+    const q=ui.ovSearch.trim();
+    filtered=filtered.filter(p=>{ const st=staffById(p.staffId); return st && (st.name.includes(q)||st.job.includes(q)); });
+  }
+  if(ui.ovKind!=="all") filtered=filtered.filter(p=>p.kind===ui.ovKind);
+  const ovStaffIds=new Set(overlaps.map(o=>o.staffId));
+  if(ui.ovOverlapOnly) filtered=filtered.filter(p=>ovStaffIds.has(p.staffId));
+
+  const cards=
+  '<div class="cards">'+
+    '<div class="card"><div class="num">'+placements.length+'</div><div class="lbl">전체 배치 건수</div></div>'+
+    '<div class="card blue"><div class="num">'+cnt("contract")+'</div><div class="lbl">계약배치</div></div>'+
+    '<div class="card"><div class="num">'+cnt("actual")+'</div><div class="lbl">실제배치</div></div>'+
+    '<div class="card amber"><div class="num">'+cnt("pending")+'</div><div class="lbl">변경 예정 배치</div></div>'+
+    '<div class="card"><div class="num">'+onStaff.size+'</div><div class="lbl">배치 중 직원</div></div>'+
+    '<div class="card '+(ovCount>0?"alert":"ok")+' click" onclick="toggleOverlapOnly()"><div class="num">'+ovCount+'</div><div class="lbl">중복 배치 건수 '+(ui.ovOverlapOnly?"· 표시 중":"· 클릭")+'</div></div>'+
+  '</div>';
+
+  const siteOptions='<option value="all">전체 현장</option>'+state.sites.map(s=>'<option value="'+s.id+'"'+(ui.ovSite===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
+  const kindOptions=["all","contract","actual","pending"].map(k=>'<option value="'+k+'"'+(ui.ovKind===k?" selected":"")+'>'+(k==="all"?"전체 구분":KIND[k])+'</option>').join("");
+
+  const filterBar=
+  '<div class="panel"><div class="panel-head"><h3>현황 필터</h3><div class="spacer"></div>'+
+  '<div class="filters">'+
+    '<label>현장 <select id="ov-site" onchange="ui.ovSite=this.value;renderOverview()">'+siteOptions+'</select></label>'+
+    '<label>직원명 검색 <input type="search" id="ov-search" value="'+esc(ui.ovSearch)+'" oninput="ui.ovSearch=this.value;renderOverview()" placeholder="이름 또는 직무"></label>'+
+    '<label>구분 <select id="ov-kind" onchange="ui.ovKind=this.value;renderOverview()">'+kindOptions+'</select></label>'+
+    '<span class="chip red '+(ui.ovOverlapOnly?"on":"")+'" onclick="toggleOverlapOnly()">⚠ 중복 배치만 보기</span>'+
+  '</div></div></div>';
+
+  const legend='<div class="legend">'+
+    '<span><i style="background:var(--blue)"></i>계약배치</span>'+
+    '<span><i style="background:var(--green)"></i>실제배치</span>'+
+    '<span><i style="background:var(--amber)"></i>변경 예정</span>'+
+    '<span><i style="background:repeating-linear-gradient(45deg,#d64545,#d64545 6px,#b83b3b 6px,#b83b3b 12px)"></i>중복 배치</span>'+
+  '</div>';
+
+  let body;
+  if(!filtered.length){
+    body='<div class="panel"><div class="empty">표시할 배치가 없습니다.</div></div>';
+  }else{
+    const rng=rangeFrom(filtered);
+    const siteGroups={};
+    filtered.forEach(p=>{ (siteGroups[p.siteId]=siteGroups[p.siteId]||[]).push(p); });
+    const ticks=monthTicks(rng);
+    let rows="";
+    Object.keys(siteGroups).forEach(sid=>{
+      const site=siteById(sid);
+      const ps=siteGroups[sid].sort((a,b)=>a.start<b.start?-1:1);
+      rows+='<div class="tl site-gap"><div class="tl-label" style="flex-basis:100%"><div class="tl-name">'+esc(site.name)+' <span class="chip gray">'+(site.hostRole==="확인필요"?"[확인 필요]":site.hostRole)+'</span></div>'+
+        '<div class="tl-meta">컨소시엄: '+esc((site.consortium||[]).join(", "))+'</div></div></div>';
+      ps.forEach(p=>{
+        const st=staffById(p.staffId);
+        const ov=overlapRangesFor(p.staffId).filter(r=>r.start<=p.end&&r.end>=p.start);
+        const stt=statusOf(p);
+        const isOv=ov.length>0 && !(ui.ovOverlapOnly);
+        const overlays=ov.map(r=>'<div class="ov-overlay" style="'+barStyle(r.start,r.end,rng)+'"></div>').join("");
+        rows+='<div class="tl" data-staff="'+p.staffId+'" data-site="'+sid+'" onclick="goManage(this.dataset.staff,this.dataset.site,'+"'"+p.id+"'"+')">'+
+          '<div class="tl-label">'+
+            '<div class="tl-name">'+esc(st.name)+' '+(isOv?'<span class="badge red">⚠ 중복</span>':'')+(p.demo?'<span class="badge demo">예시</span>':'')+'</div>'+
+            '<div class="tl-meta"><span class="chip '+KIND_COLOR[p.kind]+'">'+KIND[p.kind]+'</span><span>'+esc(st.job)+'</span><span>'+fmt(p.start)+' ~ '+fmt(p.end)+'</span><span class="status-dot '+stt.cls+'"></span>'+stt.t+'</div>'+
+          '</div>'+
+          '<div class="tl-chart"><div class="tl-row"><div class="bar '+KIND_COLOR[p.kind]+'" style="'+barStyle(p.start,p.end,rng)+'"></div>'+overlays+'</div></div>'+
+        '</div>';
+      });
+    });
+    body='<div class="panel">'+ticks+rows+'</div><div style="margin-bottom:12px"></div>';
+  }
+
+  document.getElementById("view-overview").innerHTML=
+    '<div id="ov-upload"></div>'+
+    '<div class="section-title"><h2>전체 배치 현황</h2><p>현장별 직원 배치와 기간, 중복 배치를 한 화면에서 확인합니다. 행을 클릭하면 배치 관리로 이동합니다.</p></div>'+
+    cards+filterBar+legend+body+
+    '<div class="panel"><div class="panel-head"><h3>상세 목록</h3></div>'+
+    '<div class="panel-body tight"><table><thead><tr><th>직원</th><th>직무/직급</th><th>현장</th><th>구분</th><th>시작일</th><th>종료일</th><th>상태</th><th>중복</th></tr></thead><tbody>'+detailRows(filtered)+'</tbody></table></div></div>';
+  renderUploadPanel();
+  if(focusId){ const el=document.getElementById(focusId); if(el){ try{el.focus();}catch(e){} } }
+}
+
+function detailRows(filtered){
+  if(!filtered.length) return '<tr><td colspan="8" class="empty">표시할 배치가 없습니다.</td></tr>';
+  const ovStaff=new Set(calcOverlaps().map(o=>o.staffId));
+  return filtered.sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1)).map(p=>{
+    const st=staffById(p.staffId), site=siteById(p.siteId);
+    const stt=statusOf(p);
+    const isOv=ovStaff.has(p.staffId);
+    return '<tr class="row-click '+(isOv?"warn-row":"")+'" data-staff="'+p.staffId+'" data-site="'+p.siteId+'" onclick="goManage(this.dataset.staff,this.dataset.site,'+"'"+p.id+"'"+')">'+
+      '<td><b>'+esc(st.name)+'</b>'+(p.demo?' <span class="badge demo">예시</span>':'')+'</td>'+
+      '<td>'+esc(st.job)+'</td><td>'+esc(site.name)+'</td>'+
+      '<td><span class="chip '+KIND_COLOR[p.kind]+'">'+KIND[p.kind]+'</span></td>'+
+      '<td class="mono">'+fmt(p.start)+'</td><td class="mono">'+fmt(p.end)+'</td>'+
+      '<td><span class="status-dot '+stt.cls+'"></span>'+stt.t+'</td>'+
+      '<td>'+(isOv?'<span class="chip red">⚠ 중복 배치</span>':'-')+'</td></tr>';
+  }).join("");
+}
+function toggleOverlapOnly(){ ui.ovOverlapOnly=!ui.ovOverlapOnly; renderOverview(); }
+
+function updatePrivacyBadge(){
+  const el=document.getElementById("privacy-badge");
+  if(!el) return;
+  const ext=!!(state.settings&&state.settings.external);
+  el.className="privacy-badge "+(ext?"ext":"local");
+  el.innerHTML='<span class="dot"></span>'+(ext?"외부 전송 ON":"로컬 전용 (외부 전송 없음)");
+}
+
+function findEOCD(dv){
+  const len=dv.byteLength;
+  const start=Math.max(0,len-66000);
+  for(let i=len-22;i>=start;i--){
+    if(dv.getUint32(i,true)===0x06054b50) return i;
+  }
+  throw new Error("유효한 엑셀(xlsx) 파일이 아닙니다.");
+}
+function parseCentral(dv,off,count){
+  const entries=[]; let p=off;
+  for(let n=0;n<count;n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true);
+    const csize=dv.getUint32(p+20,true);
+    const nlen=dv.getUint16(p+28,true);
+    const elen=dv.getUint16(p+30,true);
+    const clen=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    let name="";
+    for(let i=0;i<nlen;i++) name+=String.fromCharCode(dv.getUint8(p+46+i));
+    entries.push({name:name.replace(/\\/g,"/"),method,csize,lho});
+    p+=46+nlen+elen+clen;
+  }
+  return entries;
+}
+async function readEntry(buf,entry){
+  const dv=new DataView(buf);
+  const nlen=dv.getUint16(entry.lho+26,true);
+  const elen=dv.getUint16(entry.lho+28,true);
+  const dataStart=entry.lho+30+nlen+elen;
+  const data=new Uint8Array(buf,dataStart,entry.csize);
+  if(entry.method===0) return data;
+  if(entry.method===8){
+    if(typeof DecompressionStream==="undefined") throw new Error("이 브라우저는 압축된 xlsx를 읽을 수 없습니다. 최신 Chrome/Edge를 사용해 주세요.");
+    const ds=new DecompressionStream("deflate-raw");
+    const stream=new Blob([data]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  throw new Error("지원하지 않는 압축 방식입니다.");
+}
+function xmlDoc(xml){ return new DOMParser().parseFromString(xml,"application/xml"); }
+function colIndex(letters){
+  let idx=0;
+  for(const ch of letters) idx=idx*26+(ch.charCodeAt(0)-64);
+  return idx-1;
+}
+async function parseXlsx(buf){
+  const dv=new DataView(buf);
+  const eocd=findEOCD(dv);
+  const count=dv.getUint16(eocd+10,true);
+  const cdOff=dv.getUint32(eocd+16,true);
+  const entries=parseCentral(dv,cdOff,count);
+  const byName={};
+  entries.forEach(e=>byName[e.name]=e);
+  const dec=new TextDecoder("utf-8");
+  const get=name=>{ const e=byName[name]; return e?readEntry(buf,e):null; };
+  const wbRaw=await get("xl/workbook.xml");
+  const relsRaw=await get("xl/_rels/workbook.xml.rels");
+  const ssRaw=await get("xl/sharedStrings.xml");
+  if(!wbRaw||!relsRaw) throw new Error("엑셀 내부 구조를 읽지 못했습니다.");
+  const wb=xmlDoc(dec.decode(wbRaw));
+  const sheets=[];
+  wb.querySelectorAll("sheet").forEach(sh=>{ sheets.push({rid:sh.getAttribute("r:id"), name:sh.getAttribute("name")||"시트"}); });
+  const rels=xmlDoc(dec.decode(relsRaw));
+  const targetByRid={};
+  rels.querySelectorAll("Relationship").forEach(r=>{ targetByRid[r.getAttribute("Id")]=r.getAttribute("Target"); });
+  const shared=[];
+  if(ssRaw){ const ss=xmlDoc(dec.decode(ssRaw)); ss.querySelectorAll("si").forEach(si=>{ shared.push(si.textContent||""); }); }
+  const out=[];
+  for(const sh of sheets){
+    const t=targetByRid[sh.rid];
+    if(!t) continue;
+    const target= t.indexOf("xl/")===0 ? t : (t.indexOf("/")===0 ? t.replace(/^\//,"") : "xl/"+t);
+    const raw=await get(target);
+    if(!raw) continue;
+    const doc=xmlDoc(dec.decode(raw));
+    const rows=[];
+    doc.querySelectorAll("sheetData row").forEach(tr=>{
+      const cells=[];
+      tr.querySelectorAll("c").forEach(c=>{
+        const ref=c.getAttribute("r")||"";
+        const idx=colIndex(ref.replace(/[0-9]/g,""));
+        const typ=c.getAttribute("t");
+        const v=c.querySelector("v");
+        let val=null;
+        if(typ==="s"&&v) val=shared[parseInt(v.textContent,10)];
+        else if(typ==="inlineStr"){ const is=c.querySelector("is"); val=is?is.textContent:""; }
+        else if(typ==="str"&&v) val=v.textContent;
+        else if(typ==="b") val=v?v.textContent==="1":null;
+        else if(v){ const n=parseFloat(v.textContent); val=isNaN(n)?v.textContent:n; }
+        if(val!=null&&val!=="") cells.push({i:idx,val});
+      });
+      if(cells.length) rows.push(cells);
+    });
+    out.push({name:sh.name, rows});
+  }
+  if(!out.length) throw new Error("데이터가 있는 시트를 찾지 못했습니다.");
+  return out;
+}
+function detectDelim(text){
+  const first=text.split(/\r?\n/)[0]||"";
+  const cand=[",",";","\t"].map(d=>({d,c:(first.split(d).length-1)})).sort((a,b)=>b.c-a.c);
+  return cand[0].c>0?cand[0].d:",";
+}
+function cellNum(v){
+  const t=String(v).trim();
+  if(t!==""&&/^[-+]?\d+(\.\d+)?$/.test(t)) return parseFloat(t);
+  return t;
+}
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,"");
+  const delim=detectDelim(text);
+  const rows=[]; let row=[], cur="", inQ=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else inQ=false; } else cur+=ch; }
+    else if(ch==='"') inQ=true;
+    else if(ch===delim){ row.push(cur); cur=""; }
+    else if(ch==="\n"){ row.push(cur); cur=""; if(row.some(c=>c.trim()!=="")) rows.push(row); row=[]; }
+    else if(ch!=="\r") cur+=ch;
+  }
+  if(cur!==""||row.length){ row.push(cur); if(row.some(c=>c.trim()!=="")) rows.push(row); }
+  const grid=rows.map(r=>r.map((v,i)=>({i,val:cellNum(v)})));
+  if(!grid.length) throw new Error("CSV에 읽을 데이터가 없습니다.");
+  return [{name:"시트1", rows:grid}];
+}
+async function parseWorkbook(file){
+  const buf=await file.arrayBuffer();
+  const lower=file.name.toLowerCase();
+  if(lower.endsWith(".csv")){
+    let text=new TextDecoder("utf-8").decode(buf);
+    if(text.indexOf("\uFFFD")>=0){ try{ text=new TextDecoder("euc-kr").decode(buf); }catch(e){} }
+    return parseCSV(text);
+  }
+  if(lower.endsWith(".xlsx")||lower.endsWith(".xlsm")) return parseXlsx(buf);
+  throw new Error("지원 형식은 .xlsx / .xlsm / .csv 입니다. 구버전 .xls는 Excel에서 [다른 이름으로 저장 > .xlsx]로 저장해 주세요.");
+}
+function pad2(n){ return String(n).padStart(2,"0"); }
+function dateFromExcel(n){ const d=new Date(Date.UTC(1899,11,30)+Math.round(n)*86400000); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function normDate(v){
+  if(v==null||v==="") return null;
+  if(typeof v==="number") return dateFromExcel(v);
+  const s=String(v).trim();
+  if(!s) return null;
+  let m=s.match(/(\d{4})[.\-\/년\s]+(\d{1,2})[.\-\/월\s]+(\d{1,2})[일\s]*/);
+  if(m) return m[1]+"-"+pad2(m[2])+"-"+pad2(m[3]);
+  m=s.match(/^(\d{4})(\d{2})(\d{2})/);
+  if(m) return m[1]+"-"+m[2]+"-"+m[3];
+  return null;
+}
+function splitRange(v){
+  if(typeof v==="string"){
+    const m=v.match(/(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})\s*[~\-～–\s]+\s*(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/);
+    if(m) return [normDate(m[1]), normDate(m[2])];
+  }
+  return [normDate(v), null];
+}
+function normKind(v){
+  if(v==null||v==="") return "contract";
+  const s=String(v);
+  if(s.includes("실제")) return "actual";
+  if(s.includes("예정")||s.includes("변경")||s.includes("수정")||s.includes("조정")) return "pending";
+  return "contract";
+}
+function guessMapping(sheets,hasHeader){
+  const first=sheets[0]&&sheets[0].rows[0]?sheets[0].rows[0]:[];
+  const hdr={};
+  first.forEach(c=>{ hdr[c.i]=(c.val!=null?String(c.val):""); });
+  const find=(re)=>{ for(const k of Object.keys(hdr)){ if(re.test(hdr[k])) return parseInt(k,10); } return null; };
+  const map={ site:find(/현장|사업|공사|프로젝트|site/i), staff:find(/직원|성명|인원|이름|staff|member/i), job:find(/직무|직급|직위|역할|job|grade/i), start:find(/시작|착수|투입|start/i), end:find(/종료|완료|철수|end/i), kind:find(/구분|유형|type/i) };
+  if(!hasHeader){ map.site=0; map.staff=1; if(map.start==null) map.start=2; if(map.end==null) map.end=3; }
+  return map;
+}
+async function handleUpload(file){
+  if(!file) return;
+  try{
+    toast("파일을 읽는 중입니다...");
+    const sheets=await parseWorkbook(file);
+    ui.import={step:"map", file, sheets, selSheets:new Set(sheets.map(s=>s.name)), hasHeader:true, map:guessMapping(sheets,true), result:null, replace:true};
+    renderOverview();
+    toast("파일을 읽었습니다. 컬럼 매핑을 확인한 뒤 임포트해 주세요.","ok");
+  }catch(e){
+    toast("파일을 읽지 못했습니다: "+e.message,"err");
+    ui.import={step:"pick",file:null,sheets:[],selSheets:new Set(),hasHeader:true,map:{},result:null,replace:true};
+    renderOverview();
+  }
+}
+function colLabel(col,hdr,hasHeader){
+  const letter=String.fromCharCode(65+col);
+  return letter+(hasHeader&&hdr[col]!=null&&hdr[col]!==""? " · "+String(hdr[col]).trim().slice(0,12) : "");
+}
+function previewCells(sheet,limit){
+  const rows=sheet.rows.slice(0,limit);
+  const hasHeader=ui.import.hasHeader;
+  let maxCol=-1;
+  rows.forEach(r=>r.forEach(c=>{ if(c.i>maxCol) maxCol=c.i; }));
+  const hdr=hasHeader&&sheet.rows[0]?sheet.rows[0]:[];
+  const hdrMap={}; hdr.forEach(c=>hdrMap[c.i]=c.val);
+  const cols=[];
+  for(let i=0;i<=maxCol;i++) cols.push(i);
+  let html='<div class="preview-scroll"><table><thead><tr>';
+  cols.forEach(i=>{
+    const mapped=Object.values(ui.import.map).includes(i);
+    html+='<th class="'+(mapped?"mapped":"")+'">'+esc(colLabel(i,hdrMap,hasHeader))+(mapped?" ✓":"")+'</th>';
+  });
+  html+='</tr></thead><tbody>';
+  rows.forEach(r=>{
+    const map={}; r.forEach(c=>map[c.i]=c.val);
+    html+='<tr>';
+    cols.forEach(i=>{ html+='<td>'+(map[i]!=null?esc(typeof map[i]==="number"?String(map[i]):map[i]):"")+'</td>'; });
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+  return html;
+}
+function renderUploadPanel(){
+  const host=document.getElementById("ov-upload");
+  if(!host) return;
+  const imp=ui.import;
+  if(imp.step==="pick"||!imp.file){
+    host.innerHTML='<div class="panel"><div class="panel-head"><h3>엑셀 업로드 · 중복 인원 스캔</h3><div class="spacer"></div><span class="chip gray">완전 로컬 처리</span></div><div class="panel-body">'+
+      '<div class="upload-zone" onclick="document.getElementById(\'xlsx-file\').click()">'+
+      '<div class="big">전체 엑셀 파일을 업로드해 주세요</div>'+
+      '<div class="small muted">지원: .xlsx / .xlsm / .csv · 여러 시트를 모두 읽습니다</div>'+
+      '<div class="small muted" style="margin-top:4px">※ 파일은 브라우저 안에서만 분석되며 서버·외부로 전송되지 않습니다 (대외비 안전)</div>'+
+      '<div class="small muted" style="margin-top:4px">※ 브라우저는 현재 열려 있는 엑셀에 직접 접근할 수 없어, 파일을 선택해 주셔야 합니다.</div>'+
+      '</div>'+
+      '<input type="file" id="xlsx-file" accept=".xlsx,.xlsm,.csv" class="hidden" onchange="handleUpload(this.files[0])">'+
+      '<div class="btn-row" style="margin-top:12px"><button class="btn primary sm" onclick="document.getElementById(\'xlsx-file\').click()">파일 선택</button></div>'+
+      '</div></div>';
+    return;
+  }
+  if(imp.step==="map"){
+    const sheets=imp.sheets;
+    const sheetChecks=sheets.map(s=>'<label><input type="checkbox" class="imp-sheet" value="'+esc(s.name)+'"'+(imp.selSheets.has(s.name)?" checked":"")+' onchange="toggleSheet(this)"> '+esc(s.name)+' <span class="faint">('+(s.rows.length)+'행)</span></label>').join("");
+    const first=sheets[0]&&sheets[0].rows[0]?sheets[0].rows[0]:[];
+    const hdrMap={}; first.forEach(c=>hdrMap[c.i]=c.val);
+    let maxCol=-1;
+    sheets.forEach(sh=>sh.rows.forEach(r=>r.forEach(c=>{ if(c.i>maxCol) maxCol=c.i; })));
+    if(maxCol<0) maxCol=5;
+    const optCols='<option value="">선택 안 함</option>';
+    const optList=(v)=>'<select onchange="mapCol(this,\''+v+'\')"><option value="">선택 안 함</option>'+Array.from({length:maxCol+1},(_,i)=>'<option value="'+i+'"'+(imp.map[v]===i?" selected":"")+'>'+esc(colLabel(i,hdrMap,imp.hasHeader))+'</option>').join("")+'</select>';
+    const fields=[
+      {k:"site",l:"현장명 *"}, {k:"staff",l:"직원명 *"}, {k:"job",l:"직무/직급"}, {k:"start",l:"시작일 *"}, {k:"end",l:"종료일 *"}, {k:"kind",l:"구분(선택)"}
+    ];
+    const mapGrid=fields.map(f=>'<div class="field" style="margin-bottom:8px"><label>'+f.l+'</label>'+optList(f.k)+'</div>').join("");
+    const total=sheets.filter(s=>imp.selSheets.has(s.name)).reduce((s,sh)=>s+Math.max(0,sh.rows.length-(imp.hasHeader?1:0)),0);
+    host.innerHTML='<div class="panel"><div class="panel-head"><h3>엑셀 업로드 · 중복 인원 스캔</h3><div class="spacer"></div><span class="chip gray">컬럼 매핑</span></div><div class="panel-body">'+
+      '<div class="import-note">파일: <b>'+esc(imp.file.name)+'</b> · 아래에서 각 컬럼이 무엇을 뜻하는지 지정해 주세요. 시작일·종료일이 같은 컬럼에 "2026.01.01 ~ 2027.03.01"처럼 들어 있어도 인식합니다.</div>'+
+      '<div class="grid2">'+
+        '<div class="field"><label>가져올 시트</label><div class="check-list" style="grid-template-columns:1fr">'+sheetChecks+'</div></div>'+
+        '<div><div class="field"><label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="imp-header"'+(imp.hasHeader?" checked":"")+' onchange="toggleHeader(this)" style="width:auto"> 첫 행은 머리글(헤더)</label></div><div class="field"><label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="imp-replace"'+(imp.replace?" checked":"")+' onchange="toggleReplace(this)" style="width:auto"> 기존 데이터를 업로드 데이터로 대체</label><div class="hint">체크 해제하면 기존 데이터에 추가됩니다.</div></div></div>'+
+      '</div>'+
+      '<div class="map-grid">'+mapGrid+'</div>'+
+      '<div class="btn-row" style="margin:10px 0"><button class="btn primary" onclick="importRows()">임포트 ('+total+'행)</button><span class="muted small">필수(*): 현장명 · 직원명 · 시작일 · 종료일</span></div>'+
+      previewCells(first,15)+
+      '</div></div>';
+    return;
+  }
+  const r=imp.result;
+  const dupStaff=Array.from(new Set((r&&r.dupStaff)||[]));
+  host.innerHTML='<div class="panel"><div class="panel-head"><h3>엑셀 업로드 · 중복 인원 스캔</h3><div class="spacer"></div><span class="chip '+(r&&r.dupCount?"red":"green")+'">'+(r&&r.dupCount?("중복 "+r.dupCount+"건"):"중복 없음")+'</span></div><div class="panel-body">'+
+    '파일: <b>'+esc(imp.file.name)+'</b> · 가져온 배치 <b>'+r.imported+'건</b>'+(r.skipped?' · 건너뜀 <b>'+r.skipped+'건</b>':'')+
+    (r.skipped?'<div class="small muted" style="margin-top:6px">건너뜀 사유: '+Object.entries(r.skipReasons).map(([k,v])=>k+' '+v+'건').join(' · ')+'</div>':'')+
+    (dupStaff.length?'<div style="margin-top:10px"><b>중복 인원:</b> '+dupStaff.map(esc).join(', ')+'</div>':'')+
+    '<div class="btn-row" style="margin-top:14px">'+
+      '<button class="btn primary sm" onclick="ui.ovOverlapOnly=true;renderOverview()">중복 배치 보기</button>'+
+      '<button class="btn sm" onclick="ui.import={step:\'pick\',file:null,sheets:[],selSheets:new Set(),hasHeader:true,map:{},result:null,replace:true};renderOverview()">다른 파일 업로드</button>'+
+      '<button class="btn sm" onclick="switchTab(\'manage\')">배치 관리에서 확인</button>'+
+    '</div></div></div>';
+}
+function toggleSheet(el){ if(el.checked) ui.import.selSheets.add(el.value); else ui.import.selSheets.delete(el.value); renderUploadPanel(); }
+function toggleHeader(el){ ui.import.hasHeader=el.checked; renderUploadPanel(); }
+function toggleReplace(el){ ui.import.replace=el.checked; }
+function mapCol(el,key){ ui.import.map[key]= el.value===""?null:parseInt(el.value,10); renderUploadPanel(); }
+function importRows(){
+  const imp=ui.import;
+  const map=imp.map;
+  if(imp.selSheets.size===0){ toast("가져올 시트를 선택해 주세요.","err"); return; }
+  if(map.site==null||map.staff==null||map.start==null||map.end==null){ toast("현장명·직원명·시작일·종료일 컬럼을 모두 지정해 주세요.","err"); return; }
+  if(imp.replace){ state.sites=[]; state.staff=[]; state.placements=[]; state.changes=[]; }
+  const siteMap={}, staffMap={};
+  const addSite=n=>{ if(!siteMap[n]){ siteMap[n]={id:uid(),name:n,hostRole:"확인필요",consortium:["[확인 필요]"],consortiumStaff:[]}; state.sites.push(siteMap[n]); } return siteMap[n].id; };
+  const addStaff=(n,j)=>{ if(!staffMap[n]){ staffMap[n]={id:uid(),name:n,job:j||""}; state.staff.push(staffMap[n]); } else if(j&&!staffMap[n].job){ staffMap[n].job=j; } return staffMap[n].id; };
+  let imported=0, skipped=0;
+  const skipReasons={};
+  const usedStaff=new Set();
+  const g=(row,idx)=>{ if(idx==null||idx<0) return null; const c=row.find(x=>x.i===idx); return c?c.val:null; };
+  for(const sh of imp.sheets){
+    if(!imp.selSheets.has(sh.name)) continue;
+    const rows=sh.rows;
+    for(let r=0;r<rows.length;r++){
+      if(imp.hasHeader&&r===0) continue;
+      const row=rows[r];
+      const siteRaw=g(row,map.site), staffRaw=g(row,map.staff), jobRaw=g(row,map.job), kindRaw=g(row,map.kind);
+      let startRaw=g(row,map.start), endRaw=g(row,map.end);
+      if(map.start===map.end&&startRaw!=null){
+        const sr=splitRange(startRaw);
+        startRaw=sr[0]; if(endRaw==null||endRaw==="") endRaw=sr[1];
+      }
+      const start=splitRange(startRaw)[0];
+      const end=normDate(endRaw);
+      const site=siteRaw!=null?String(siteRaw).trim():"";
+      const staff=staffRaw!=null?String(staffRaw).trim():"";
+      const job=jobRaw!=null?String(jobRaw).trim():"";
+      const reasons=[];
+      if(!site) reasons.push("현장명 없음");
+      if(!staff) reasons.push("직원명 없음");
+      if(!start) reasons.push("시작일 누락/형식 오류");
+      if(!end) reasons.push("종료일 누락/형식 오류");
+      if(start&&end&&end<start) reasons.push("기간 역전(종료<시작)");
+      if(reasons.length){ skipped++; const key=reasons.join(", "); skipReasons[key]=(skipReasons[key]||0)+1; continue; }
+      const sid=addSite(site), stid=addStaff(staff,job);
+      state.placements.push({id:uid(),siteId:sid,staffId:stid,kind:normKind(kindRaw),start,end,imported:true});
+      usedStaff.add(stid);
+      imported++;
+    }
+  }
+  save();
+  const overlaps=calcOverlaps().filter(o=>usedStaff.has(o.staffId));
+  const dupCount=overlaps.reduce((s,o)=>s+o.conflicts.length,0);
+  imp.result={imported,skipped,skipReasons,dupCount,dupStaff:overlaps.map(o=>o.staff.name)};
+  imp.step="done";
+  renderOverview();
+  if(dupCount) toast(imported+"건 가져오기 완료. 중복 배치 "+dupCount+"건 발견되었습니다!","err");
+  else toast(imported+"건 가져오기 완료. 중복이 없습니다.","ok");
+}
+
+function rangeFrom(list){
+  let min=null,max=null;
+  list.forEach(p=>{ if(p.start&&p.end){ if(!min||p.start<min)min=p.start; if(!max||p.end>max)max=p.end; } });
+  if(!min||!max){ const t=todayISO(); min=max=t; }
+  const dmin=new Date(min+"T00:00:00"); dmin.setDate(1);
+  const dmax=new Date(max+"T00:00:00"); dmax.setMonth(dmax.getMonth()+1,0);
+  return {min:dmin,max:dmax,minI:dmin.getTime(),maxI:dmax.getTime()};
+}
+function pos(iso,rng,asEnd){
+  const t=new Date(iso+"T00:00:00").getTime()+(asEnd?86400000:0);
+  return Math.max(0,Math.min(1,(t-rng.minI)/(rng.maxI-rng.minI||1)));
+}
+function barStyle(s,e,rng){
+  const l=pos(s,rng,false)*100, w=(pos(e,rng,true)-pos(s,rng,false))*100;
+  return "left:"+l.toFixed(3)+"%;width:"+Math.max(0.4,w).toFixed(3)+"%";
+}
+function monthTicks(rng){
+  const out=['<div class="ticks">'];
+  const step=Math.max(1,Math.ceil(monthsBetween(rng.min,rng.max)/10));
+  let d=new Date(rng.min);
+  let i=0;
+  while(d<=rng.max){
+    if(i%step===0){
+      const pct=pos(toISOMonth(d)+"-01",rng,false)*100;
+      out.push('<span style="left:'+pct.toFixed(2)+'%">'+d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,"0")+'</span>');
+    }
+    d=new Date(d.getFullYear(),d.getMonth()+1,1); i++;
+  }
+  out.push('</div>');
+  return out.join("");
+}
+function toISOMonth(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function monthsBetween(a,b){ return (b.getFullYear()-a.getFullYear())*12+(b.getMonth()-a.getMonth())+1; }
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function renderManage(){
+  const sub='<div class="sub-tabs">'+
+    ['sites','placements','history','export'].map(k=>{
+      const label={sites:"현장 · 직원 관리",placements:"배치 관리",history:"직원별 이력",export:"엑셀 내려받기"}[k];
+      return '<button class="sub-tab '+(ui.mSub===k?"active":"")+'" onclick="ui.mSub=\''+k+'\';renderManage()">'+label+'</button>';
+    }).join("")+'</div>';
+  const content=
+    (ui.mSub==="sites"?renderSitesStaff():
+     ui.mSub==="placements"?renderPlacementMgr():
+     ui.mSub==="history"?renderHistory():
+     renderExport());
+  document.getElementById("view-manage").innerHTML=
+    '<div class="section-title"><h2>배치 관리</h2><p>현장·직원·배치 정보를 등록하고 수정합니다. 계약배치를 기준으로 실제배치와 변경 예정 배치를 관리합니다.</p></div>'+
+    sub+content;
+}
+
+function renderSitesStaff(){
+  const siteRows=state.sites.map(s=>{
+    const sitePl=state.placements.filter(p=>p.siteId===s.id);
+    return '<tr>'+
+      '<td><b>'+esc(s.name)+'</b></td>'+
+      '<td>'+(s.hostRole==="확인필요"? '<span class="badge confirm">[확인 필요]</span>' : '<span class="chip gray">'+s.hostRole+'</span>')+'</td>'+
+      '<td>'+(s.consortium&&s.consortium.length&&s.consortium[0]!=="[확인 필요]"? esc(s.consortium.join(", ")) : '<span class="badge confirm">[확인 필요]</span>')+'</td>'+
+      '<td>'+(s.consortiumStaff&&s.consortiumStaff.length? esc(s.consortiumStaff.map(c=>c.staffName+(c.co?" ("+c.co+")":"")).join(", ")) : '<span class="badge confirm">[확인 필요]</span>')+'</td>'+
+      '<td>'+sitePl.length+'건</td>'+
+      '<td><div class="btn-row"><button class="btn sm" onclick="openSiteModal(\''+s.id+'\')">편집</button><button class="btn sm danger" onclick="delSite(\''+s.id+'\')">삭제</button></div></td>'+
+    '</tr>';
+  }).join("");
+  const staffRows=state.staff.map(s=>{
+    const n=state.placements.filter(p=>p.staffId===s.id).length;
+    return '<tr><td><b>'+esc(s.name)+'</b></td><td>'+esc(s.job)+'</td><td>'+n+'건</td>'+
+      '<td><div class="btn-row"><button class="btn sm" onclick="openStaffModal(\''+s.id+'\')">편집</button><button class="btn sm danger" onclick="delStaff(\''+s.id+'\')">삭제</button></div></td></tr>';
+  }).join("");
+
+  return '<div class="panel"><div class="panel-head"><h3>현장 정보</h3><div class="spacer"></div><button class="btn primary sm" onclick="openSiteModal()">+ 현장 등록</button></div>'+
+  '<div class="panel-body tight"><table><thead><tr><th>현장명</th><th>주관/부관</th><th>컨소시엄사</th><th>컨소시엄사별 담당 직원</th><th>배치</th><th>관리</th></tr></thead>'+
+  '<tbody>'+(siteRows||'<tr><td colspan="6" class="empty">등록된 현장이 없습니다.</td></tr>')+'</tbody></table></div></div>'+
+
+  '<div class="panel"><div class="panel-head"><h3>직원</h3><div class="spacer"></div><button class="btn primary sm" onclick="openStaffModal()">+ 직원 등록</button></div>'+
+  '<div class="panel-body tight"><table><thead><tr><th>직원명</th><th>직무/직급</th><th>배치</th><th>관리</th></tr></thead>'+
+  '<tbody>'+(staffRows||'<tr><td colspan="4" class="empty">등록된 직원이 없습니다.</td></tr>')+'</tbody></table></div></div>';
+}
+
+function openSiteModal(siteId){
+  const s=siteId?siteById(siteId):null;
+  const roleSel=["주관사","부관사","확인필요"].map(r=>'<option value="'+r+'"'+(s&&s.hostRole===r?" selected":"")+'>'+(r==="확인필요"?"[확인 필요]":r)+'</option>').join("");
+  const cons=(s&&s.consortium&&s.consortium[0]!=="[확인 필요]")?s.consortium:[""];
+  const consHtml=cons.map(c=>'<div class="cons-row" style="display:flex;gap:6px;margin-bottom:6px"><input value="'+esc(c)+'" placeholder="컨소시엄사명"><button class="btn sm danger" onclick="this.parentNode.remove()">삭제</button></div>').join("");
+  const cs=(s&&s.consortiumStaff)?s.consortiumStaff:[];
+  const csHtml=cs.map(c=>'<div class="cs-row" style="display:flex;gap:6px;margin-bottom:6px"><input value="'+esc(c.staffName)+'" placeholder="담당 직원명" style="flex:1"><input value="'+esc(c.co)+'" placeholder="소속 컨소시엄사 (선택)" style="flex:1"><button class="btn sm danger" onclick="this.parentNode.remove()">삭제</button></div>').join("");
+  openModal(
+    '<input type="hidden" id="site-id" value="'+(siteId||"")+'">'+
+    '<div class="field"><label>현장명 <span class="req">*</span></label><input id="site-name" value="'+esc(s?s.name:"")+'" placeholder="예) 부산오페라하우스"></div>'+
+    '<div class="grid2"><div class="field"><label>주관사 / 부관사 여부</label><select id="site-role">'+roleSel+'</select><div class="hint">값이 정해지지 않으면 [확인 필요]로 표시됩니다.</div></div>'+
+    '<div class="field"><label>컨소시엄사</label><div id="cons-list">'+consHtml+'</div><button class="btn sm" type="button" onclick="addConsRow()">+ 컨소시엄사 추가</button></div></div>'+
+    '<div class="field"><label>컨소시엄사별 담당 직원</label><div id="cs-list">'+csHtml+'</div><button class="btn sm" type="button" onclick="addCsRow()">+ 담당 직원 추가</button><div class="hint">미정이면 [확인 필요]로 표시됩니다.</div></div>'+
+    '<div class="field"><label>저장 전 필수값</label><div class="hint">현장명이 비어 있으면 저장할 수 없습니다.</div></div>'+
+    '<div class="btn-row"><button class="btn primary" onclick="saveSite()">저장</button></div>',
+    siteId?"현장 수정":"현장 등록");
+}
+function addConsRow(){ document.getElementById("cons-list").insertAdjacentHTML("beforeend",'<div class="cons-row" style="display:flex;gap:6px;margin-bottom:6px"><input placeholder="컨소시엄사명"><button class="btn sm danger" onclick="this.parentNode.remove()">삭제</button></div>'); }
+function addCsRow(){ document.getElementById("cs-list").insertAdjacentHTML("beforeend",'<div class="cs-row" style="display:flex;gap:6px;margin-bottom:6px"><input placeholder="담당 직원명" style="flex:1"><input placeholder="소속 컨소시엄사 (선택)" style="flex:1"><button class="btn sm danger" onclick="this.parentNode.remove()">삭제</button></div>'); }
+function saveSite(){
+  const id=fieldVal("site-id");
+  const name=fieldVal("site-name").trim();
+  const role=fieldVal("site-role");
+  if(!name){ toast("현장명을 입력해 주세요.","err"); return; }
+  const cons=[...document.querySelectorAll("#cons-list .cons-row input")].map(i=>i.value.trim()).filter(Boolean);
+  const cs=[...document.querySelectorAll("#cs-list .cs-row")].map(r=>{ const ins=r.querySelectorAll("input"); return {staffName:ins[0].value.trim(), co:ins[1].value.trim()}; }).filter(c=>c.staffName);
+  if(id){
+    const s=siteById(id);
+    s.name=name; s.hostRole=role; s.consortium=cons.length?cons:["[확인 필요]"]; s.consortiumStaff=cs;
+  }else{
+    state.sites.push({id:uid(),name,hostRole:role,consortium:cons.length?cons:["[확인 필요]"],consortiumStaff:cs});
+  }
+  save(); hideModal(); renderManage(); toast("저장되었습니다.","ok");
+}
+function delSite(id){
+  const n=state.placements.filter(p=>p.siteId===id).length;
+  if(!confirm("현장을 삭제할까요?"+(n?" 해당 현장의 배치 "+n+"건도 함께 삭제됩니다.":""))) return;
+  state.sites=state.sites.filter(s=>s.id!==id);
+  state.placements=state.placements.filter(p=>p.siteId!==id);
+  save(); renderManage(); toast("삭제되었습니다.");
+}
+function openStaffModal(staffId){
+  const s=staffId?staffById(staffId):null;
+  openModal(
+    '<input type="hidden" id="staff-id" value="'+(staffId||"")+'">'+
+    '<div class="field"><label>직원명 <span class="req">*</span></label><input id="staff-name" value="'+esc(s?s.name:"")+'" placeholder="예) 이경민"></div>'+
+    '<div class="field"><label>직무/직급</label><input id="staff-job" value="'+esc(s?s.job:"")+'" placeholder="예) 건축3, 토목2, 기계, 건축 책임"></div>'+
+    '<div class="btn-row"><button class="btn primary" onclick="saveStaff()">저장</button></div>',
+    staffId?"직원 수정":"직원 등록");
+}
+function saveStaff(){
+  const id=fieldVal("staff-id");
+  const name=fieldVal("staff-name").trim();
+  const job=fieldVal("staff-job").trim();
+  if(!name){ toast("직원명을 입력해 주세요.","err"); return; }
+  if(id){ const s=staffById(id); s.name=name; s.job=job; }
+  else state.staff.push({id:uid(),name,job});
+  save(); hideModal(); renderManage(); toast("저장되었습니다.","ok");
+}
+function delStaff(id){
+  const n=state.placements.filter(p=>p.staffId===id).length;
+  if(!confirm("직원을 삭제할까요?"+(n?" 해당 직원의 배치 "+n+"건도 함께 삭제됩니다.":""))) return;
+  state.staff=state.staff.filter(s=>s.id!==id);
+  state.placements=state.placements.filter(p=>p.staffId!==id);
+  state.changes=state.changes.filter(c=>c.staffId!==id);
+  save(); renderManage(); toast("삭제되었습니다.");
+}
+
+function renderPlacementMgr(){
+  const siteOpt='<option value="all">전체 현장</option>'+state.sites.map(s=>'<option value="'+s.id+'"'+(ui.mSiteFilter===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
+  const staffOpt='<option value="all">전체 직원</option>'+state.staff.map(s=>'<option value="'+s.id+'"'+(ui.mStaffFilter===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
+  const kindOpt=["all","contract","actual","pending"].map(k=>'<option value="'+k+'"'+(ui.mKindFilter===k?" selected":"")+'>'+(k==="all"?"전체 구분":KIND[k])+'</option>').join("");
+  let list=[...state.placements];
+  if(ui.mSiteFilter!=="all") list=list.filter(p=>p.siteId===ui.mSiteFilter);
+  if(ui.mStaffFilter!=="all") list=list.filter(p=>p.staffId===ui.mStaffFilter);
+  if(ui.mKindFilter!=="all") list=list.filter(p=>p.kind===ui.mKindFilter);
+  list.sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1));
+  const rows=list.map(p=>{
+    const st=staffById(p.staffId), site=siteById(p.siteId);
+    const ch=state.changes.filter(c=>c.staffId===p.staffId).slice(-1)[0];
+    return '<tr id="placement-row-'+p.id+'">'+
+      '<td><b>'+esc(st?st.name:"-")+'</b>'+(p.demo?' <span class="badge demo">예시</span>':'')+'</td>'+
+      '<td>'+esc(st?st.job:"-")+'</td>'+
+      '<td>'+esc(site?site.name:"-")+'</td>'+
+      '<td><span class="chip '+KIND_COLOR[p.kind]+'">'+KIND[p.kind]+'</span></td>'+
+      '<td class="mono">'+fmt(p.start)+'</td><td class="mono">'+fmt(p.end)+'</td>'+
+      '<td class="small muted">'+(ch? "변경일 "+fmt(ch.changeDate)+"<br>"+esc(ch.changeReason||"사유 미기록") : "-")+'</td>'+
+      '<td><div class="btn-row"><button class="btn sm" onclick="openPlacementModal(\''+p.id+'\')">편집</button><button class="btn sm danger" onclick="delPlacement(\''+p.id+'\')">삭제</button></div></td>'+
+    '</tr>';
+  }).join("");
+  return '<div class="panel"><div class="panel-head"><h3>직원 배치 목록</h3><div class="spacer"></div>'+
+  '<div class="filters">'+
+    '<label>현장 <select onchange="ui.mSiteFilter=this.value;renderManage()">'+siteOpt+'</select></label>'+
+    '<label>직원 <select onchange="ui.mStaffFilter=this.value;renderManage()">'+staffOpt+'</select></label>'+
+    '<label>구분 <select onchange="ui.mKindFilter=this.value;renderManage()">'+kindOpt+'</select></label>'+
+    '<button class="btn primary sm" onclick="openPlacementModal()">+ 배치 추가</button>'+
+  '</div></div>'+
+  '<div class="panel-body tight"><table><thead><tr><th>직원</th><th>직무/직급</th><th>현장</th><th>구분</th><th>시작일</th><th>종료일</th><th>최근 변경</th><th>관리</th></tr></thead>'+
+  '<tbody>'+(rows||'<tr><td colspan="8" class="empty">등록된 배치가 없습니다.</td></tr>')+'</tbody></table></div></div>'+
+  '<div class="panel" style="border-left:3px solid var(--blue)"><div class="panel-body" style="padding:12px 16px;font-size:13px;color:var(--muted)">'+
+  '<b>계약배치·실제배치·변경 예정 원칙</b> — 계약배치를 기본 기준으로 둡니다. 실제배치가 계약배치와 다르면 AI 점검에서 차이를 알려줍니다. 변경이 예정됐지만 아직 변경계약이 완료되지 않은 경우 <span class="chip amber">변경 예정</span>으로 구분하고, 변경계약이 완료되면 편집에서 "변경계약 완료"를 선택해 계약배치로 확정합니다.</div></div>';
+}
+
+function openPlacementModal(pid){
+  const p=pid?placementById(pid):null;
+  const staffOpt=state.staff.map(s=>'<option value="'+s.id+'"'+(p&&p.staffId===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
+  const siteOpt=state.sites.map(s=>'<option value="'+s.id+'"'+(p&&p.siteId===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
+  const kindOpt=["contract","actual","pending"].map(k=>'<option value="'+k+'"'+(p&&p.kind===k?" selected":"")+'>'+KIND[k]+'</option>').join("");
+  const isPending=p&&p.kind==="pending";
+  openModal(
+    '<input type="hidden" id="pl-id" value="'+(pid||"")+'">'+
+    (pid?'<div class="field" style="background:var(--gray-bg);border-radius:6px;padding:10px 12px;font-size:13px"><b>현재 값</b><br>직원: '+esc(staffById(p.staffId).name)+' · 현장: '+esc(siteById(p.siteId).name)+' · '+KIND[p.kind]+' · '+fmt(p.start)+' ~ '+fmt(p.end)+'</div>':'')+
+    (isPending?'<div class="field" style="background:var(--amber-bg);border-radius:6px;padding:10px 12px;font-size:13px;color:#8a5a10">변경 예정 배치입니다. 기간·현장을 확정한 뒤 아래 "변경계약 완료"를 체크하면 계약배치로 전환되며 변경이력이 기록됩니다.</div>':'')+
+    '<div class="grid2">'+
+      '<div class="field"><label>직원 <span class="req">*</span></label><select id="pl-staff">'+staffOpt+'</select></div>'+
+      '<div class="field"><label>현장 <span class="req">*</span></label><select id="pl-site">'+siteOpt+'</select></div>'+
+      '<div class="field"><label>구분 <span class="req">*</span></label><select id="pl-kind">'+kindOpt+'</select></div>'+
+      '<div class="field"><label>시작일 <span class="req">*</span></label><input type="date" id="pl-start" value="'+(p?p.start:"")+'"></div>'+
+      '<div class="field"><label>종료일 <span class="req">*</span></label><input type="date" id="pl-end" value="'+(p?p.end:"")+'"></div>'+
+    '</div>'+
+    (pid?'<div class="field"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pl-contract-done" style="width:auto"> 변경계약 완료 (변경 예정 → 계약배치로 확정)</label></div>':'')+
+    '<div class="field"><label>변경일 (변경 기록용)</label><input type="date" id="pl-chg-date" value="'+(p&&p.kind==="pending"?todayISO():"")+'"><div class="hint">계약배치의 현장·기간이 바뀌면 이 변경일과 사유로 변경이력이 기록됩니다.</div></div>'+
+    '<div class="field"><label>변경 사유</label><textarea id="pl-chg-reason" rows="2" placeholder="예) 공정 조정으로 투입 기간 변경"></textarea></div>'+
+    '<div class="btn-row"><button class="btn primary" onclick="savePlacement()">저장</button></div>',
+    pid?"배치 수정":"배치 추가");
+}
+function savePlacement(){
+  const id=fieldVal("pl-id");
+  const old=id?placementById(id):null;
+  const staffId=fieldVal("pl-staff"), siteId=fieldVal("pl-site");
+  const kind=fieldVal("pl-kind");
+  const start=fieldVal("pl-start"), end=fieldVal("pl-end");
+  if(!staffId){ toast("직원을 선택해 주세요.","err"); return; }
+  if(!siteId){ toast("현장을 선택해 주세요.","err"); return; }
+  if(!start){ toast("배치 시작일을 입력해 주세요.","err"); return; }
+  if(!end){ toast("배치 종료일을 입력해 주세요.","err"); return; }
+  if(end<start){ toast("종료일이 시작일보다 빠릅니다. 기간을 확인해 주세요.","err"); return; }
+  const contractDone=document.getElementById("pl-contract-done")&&document.getElementById("pl-contract-done").checked;
+  const chgDate=fieldVal("pl-chg-date")||todayISO();
+  const chgReason=fieldVal("pl-chg-reason").trim()||"변경 사유 미기록";
+
+  if(old){
+    const changed=(old.siteId!==siteId||old.start!==start||old.end!==end);
+    const contractCompleted=contractDone&&(old.kind==="pending"||kind==="pending");
+    const effectiveKind = contractCompleted ? "contract" : kind;
+    const siteN=siteById(siteId).name;
+    const oldSiteN=siteById(old.siteId).name;
+    if(changed || contractCompleted){
+      const before={siteName:oldSiteN, start:old.start, end:old.end};
+      state.changes.push({id:uid(),staffId:old.staffId,before,after:{siteName:siteN,start,end},changeDate:chgDate,changeReason:chgReason,demo:old.demo});
+    }
+    old.siteId=siteId; old.start=start; old.end=end; old.kind=effectiveKind;
+  }else{
+    state.placements.push({id:uid(),siteId,staffId,kind,start,end,demo:false});
+    const reason=fieldVal("pl-chg-reason").trim();
+    if(reason&&reason!=="변경 사유 미기록"){
+      const siteN=siteById(siteId).name;
+      state.changes.push({id:uid(),staffId,before:null,after:{siteName:siteN,start,end},changeDate:chgDate,changeReason:reason,demo:false});
+    }
+  }
+  save(); hideModal(); renderManage(); toast("저장되었습니다.","ok");
+}
+function delPlacement(id){
+  if(!confirm("이 배치를 삭제할까요?")) return;
+  state.placements=state.placements.filter(p=>p.id!==id);
+  save(); renderManage(); toast("삭제되었습니다.");
+}
+
+function renderHistory(){
+  const staffOpt=state.staff.map(s=>'<option value="'+s.id+'">'+esc(s.name)+' ('+esc(s.job)+')</option>').join("");
+  const selectBox='<div class="panel"><div class="panel-head"><h3>직원 선택</h3><div class="spacer"></div><select id="hist-staff" onchange="renderHistoryBody()"><option value="">직원을 선택하세요</option>'+staffOpt+'</select></div></div>';
+  const body='<div id="hist-body"></div>';
+  document.getElementById("view-manage").innerHTML=
+    '<div class="section-title"><h2>배치 관리</h2><p>직원별 계약배치·실제배치·변경이력을 한눈에 확인합니다.</p></div>'+
+    '<div class="sub-tabs">'+['sites','placements','history','export'].map(k=>'<button class="sub-tab '+(ui.mSub===k?"active":"")+'" onclick="ui.mSub=\''+k+'\';renderManage()">'+{sites:"현장 · 직원 관리",placements:"배치 관리",history:"직원별 이력",export:"엑셀 내려받기"}[k]+'</button>').join("")+'</div>'+
+    selectBox+body;
+  renderHistoryBody();
+}
+function renderHistoryBody(){
+  const sid=fieldVal("hist-staff");
+  const box=document.getElementById("hist-body");
+  if(!sid){ box.innerHTML='<div class="panel"><div class="empty">직원을 선택하면 배치 이력을 확인할 수 있습니다.</div></div>'; return; }
+  const st=staffById(sid);
+  const ps=state.placements.filter(p=>p.staffId===sid).sort((a,b)=>a.start<b.start?-1:1);
+  const chs=state.changes.filter(c=>c.staffId===sid).sort((a,b)=>(a.changeDate<b.changeDate?-1:1));
+  const plRows=ps.map(p=>{
+    const site=siteById(p.siteId);
+    const stt=statusOf(p);
+    return '<tr><td><b>'+esc(st.name)+'</b></td><td>'+esc(st.job)+'</td><td>'+esc(site.name)+'</td>'+
+      '<td><span class="chip '+KIND_COLOR[p.kind]+'">'+KIND[p.kind]+'</span></td>'+
+      '<td class="mono">'+fmt(p.start)+'</td><td class="mono">'+fmt(p.end)+'</td>'+
+      '<td><span class="status-dot '+stt.cls+'"></span>'+stt.t+'</td></tr>';
+  }).join("");
+  const chRows=chs.map(c=>'<tr><td>'+(c.before? esc(c.before.siteName)+'<br><span class="mono">'+fmt(c.before.start)+' ~ '+fmt(c.before.end)+'</span> : '+ '<span class="faint">배치 기록</span>' : '<span class="faint">신규</span>')+'</td>'+
+    '<td>'+esc(c.after.siteName)+'<br><span class="mono">'+fmt(c.after.start)+' ~ '+fmt(c.after.end)+'</span></td>'+
+    '<td class="mono">'+fmt(c.changeDate)+'</td><td>'+esc(c.changeReason)+'</td></tr>').join("");
+  const diff=buildDiffForStaff(sid);
+  box.innerHTML=
+    '<div class="panel"><div class="panel-head"><h3>'+esc(st.name)+' <span class="muted">· '+esc(st.job)+'</span></h3></div>'+
+    '<div class="panel-body tight"><table><thead><tr><th>직원</th><th>직무/직급</th><th>현장</th><th>구분</th><th>시작일</th><th>종료일</th><th>상태</th></tr></thead>'+
+    '<tbody>'+(plRows||'<tr><td colspan="7" class="empty">배치 이력이 없습니다.</td></tr>')+'</tbody></table></div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>변경 이력</h3></div>'+
+    '<div class="panel-body tight"><table><thead><tr><th>변경 전</th><th>변경 후</th><th>변경일</th><th>변경 사유</th></tr></thead>'+
+    '<tbody>'+(chRows||'<tr><td colspan="4" class="empty">변경 이력이 없습니다.</td></tr>')+'</tbody></table></div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>계약배치 vs 실제배치</h3></div><div class="panel-body">'+diff+'</div></div>';
+}
+function buildDiffForStaff(sid){
+  const c=state.placements.filter(p=>p.staffId===sid&&p.kind==="contract");
+  const a=state.placements.filter(p=>p.staffId===sid&&p.kind==="actual");
+  if(!c.length&&!a.length) return '<div class="muted small">계약배치와 실제배치가 모두 없습니다.</div>';
+  const line=(lbl,val)=>{ if(!val) return ""; const v=val.split(" || "); return '<div class="ai-item"><b>'+lbl+'</b><div>'+v.map(x=>esc(x)).join('<br>')+'</div></div>'; };
+  const cs=c.map(p=>esc(siteById(p.siteId).name)+' · '+fmt(p.start)+' ~ '+fmt(p.end));
+  const as=a.map(p=>esc(siteById(p.siteId).name)+' · '+fmt(p.start)+' ~ '+fmt(p.end));
+  let note;
+  if(!c.length) note='<span class="chip amber">실제배치만 있음 — 추가 투입 가능성 (확인 필요)</span>';
+  else if(!a.length) note='<span class="chip gray">실제배치 미입력 — 비교할 수 없음 (확인 필요)</span>';
+  else note='<span class="chip green">비교 가능</span>';
+  return '<div class="filters" style="margin-bottom:10px">'+note+'</div>'+
+    line("계약배치",cs.join(" || "))+line("실제배치",as.join(" || "));
+}
+
+function renderExport(){
+  const siteChecks=state.sites.map(s=>'<label><input type="checkbox" class="exp-site" value="'+s.id+'"> '+esc(s.name)+' ('+state.placements.filter(p=>p.siteId===s.id).length+'건)</label>').join("");
+  const staffChecks=state.staff.map(s=>'<label><input type="checkbox" class="exp-staff" value="'+s.id+'"> '+esc(s.name)+' · '+esc(s.job)+' ('+state.placements.filter(p=>p.staffId===s.id).length+'건)</label>').join("");
+  return '<div class="export-block"><h4>현장별 엑셀 내려받기</h4>'+
+    '<div class="small muted" style="margin-bottom:8px">현장정보(주관/부관, 컨소시엄사) + 계약배치 + 실제배치 + 변경 예정 배치 + 변경사항을 하나의 파일에 담습니다.</div>'+
+    '<div class="check-list">'+siteChecks+'</div>'+
+    '<div class="btn-row"><button class="btn sm" onclick="toggleAll(\'exp-site\',true)">전체 선택</button><button class="btn sm" onclick="toggleAll(\'exp-site\',false)">전체 해제</button>'+
+    '<button class="btn primary" onclick="exportSites()">현장별 엑셀 내려받기</button></div></div>'+
+  '<div class="export-block"><h4>직원별 엑셀 내려받기</h4>'+
+    '<div class="small muted" style="margin-bottom:8px">직원정보 + 전체 배치 이력 + 계약배치 + 실제배치를 하나의 파일에 담습니다.</div>'+
+    '<div class="check-list">'+staffChecks+'</div>'+
+    '<div class="btn-row"><button class="btn sm" onclick="toggleAll(\'exp-staff\',true)">전체 선택</button><button class="btn sm" onclick="toggleAll(\'exp-staff\',false)">전체 해제</button>'+
+    '<button class="btn primary" onclick="exportStaff()">직원별 엑셀 내려받기</button></div></div>'+
+  '<div class="panel" style="border-left:3px solid var(--green)"><div class="panel-body" style="padding:12px 16px;font-size:13px;color:var(--muted)">내려받은 파일은 엑셀(Excel)에서 바로 열 수 있는 XML(스프레드시트) 형식입니다. 데이터는 브라우저에 임시 저장되므로 중요한 자료는 엑셀로 내려받아 보관하세요.</div></div>';
+}
+function toggleAll(cls,on){
+  document.querySelectorAll("."+cls).forEach(c=>c.checked=on);
+}
+
+function xlsEscape(s){
+  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function buildWorkbook(sheets){
+  const ns='xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"';
+  let xml='<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>';
+  xml+='<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '+ns+' xmlns:x="urn:schemas-microsoft-com:office:excel">';
+  xml+='<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EFF7" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style></Styles>';
+  sheets.forEach(sh=>{
+    xml+='<Worksheet ss:Name="'+xlsEscape(sh.name).slice(0,30)+'"><Table>';
+    (sh.widths||[]).forEach(w=>{ xml+='<Column ss:AutoFitWidth="0" ss:Width="'+w+'"/>'; });
+    sh.rows.forEach((r,i)=>{
+      xml+='<Row>';
+      r.forEach(c=>{
+        const isStr=typeof c==="string";
+        xml+='<Cell'+(i===0?' ss:StyleID="h"':'')+'><Data ss:Type="'+(isStr?"String":"Number")+'">'+xlsEscape(isStr?c:(c==null?"":c))+'</Data></Cell>';
+      });
+      xml+='</Row>';
+    });
+    xml+='</Table></Worksheet>';
+  });
+  xml+='</Workbook>';
+  return xml;
+}
+function download(name,content,mime){
+  const blob=new Blob(["\uFEFF"+content],{type:(mime||"application/vnd.ms-excel")+";charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+function ymd(){ const d=new Date(); return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
+function exportSites(){
+  const ids=[...document.querySelectorAll(".exp-site:checked")].map(c=>c.value);
+  if(!ids.length){ toast("내려받을 현장을 선택해 주세요.","err"); return; }
+  const sites=state.sites.filter(s=>ids.includes(s.id));
+  const sheets=[];
+  sheets.push({
+    name:"현장정보", widths:[60,14,40,40],
+    rows:[["현장명","주관/부관","컨소시엄사","컨소시엄사별 담당 직원"]].concat(
+      sites.map(s=>[s.name, s.hostRole==="확인필요"?"[확인 필요]":s.hostRole, (s.consortium&&s.consortium[0]!=="[확인 필요]")?s.consortium.join(", "):"[확인 필요]", (s.consortiumStaff&&s.consortiumStaff.length)?s.consortiumStaff.map(c=>c.staffName+(c.co?" ("+c.co+")":"")).join(", "):"[확인 필요]"])
+    )
+  });
+  KIND_ORDER.forEach(k=>{
+    sheets.push({
+      name:KIND[k], widths:[16,60,16,16,16],
+      rows:[[KIND[k]+" 직원","현장","직무/직급","시작일","종료일"]].concat(
+        state.placements.filter(p=>p.kind===k&&ids.includes(p.siteId)).sort((a,b)=>a.start<b.start?-1:1).map(p=>{
+          const st=staffById(p.staffId);
+          return [st?st.name:"", siteById(p.siteId).name, st?st.job:"", fmt(p.start), fmt(p.end)];
+        })
+      )
+    });
+  });
+  const chgRows=state.changes.filter(c=>{
+    const ps=state.placements.filter(p=>p.staffId===c.staffId);
+    return ps.some(p=>ids.includes(p.siteId));
+  });
+  sheets.push({
+    name:"변경사항", widths:[16,40,40,16,40],
+    rows:[["직원","변경 전","변경 후","변경일","변경 사유"]].concat(
+      chgRows.sort((a,b)=>a.changeDate<b.changeDate?-1:1).map(c=>{
+        const st=staffById(c.staffId);
+        const bef=c.before? c.before.siteName+" ("+fmt(c.before.start)+" ~ "+fmt(c.before.end)+")" : "신규";
+        return [st?st.name:"", bef, c.after.siteName+" ("+fmt(c.after.start)+" ~ "+fmt(c.after.end)+")", fmt(c.changeDate), c.changeReason];
+      })
+    )
+  });
+  download("현장별_배치현황_"+ymd()+".xml", buildWorkbook(sheets));
+  toast("현장별 엑셀을 내려받았습니다.","ok");
+}
+function exportStaff(){
+  const ids=[...document.querySelectorAll(".exp-staff:checked")].map(c=>c.value);
+  if(!ids.length){ toast("내려받을 직원을 선택해 주세요.","err"); return; }
+  const staff=state.staff.filter(s=>ids.includes(s.id));
+  const sheets=[];
+  sheets.push({
+    name:"직원정보", widths:[16,16],
+    rows:[["직원명","직무/직급"]].concat(staff.map(s=>[s.name,s.job]))
+  });
+  sheets.push({
+    name:"전체 배치이력", widths:[16,60,16,16,16,16],
+    rows:[["직원","현장","구분","시작일","종료일","상태"]].concat(
+      state.placements.filter(p=>ids.includes(p.staffId)).sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1)).map(p=>{
+        const st=staffById(p.staffId);
+        return [st?st.name:"", siteById(p.siteId).name, KIND[p.kind], fmt(p.start), fmt(p.end), statusOf(p).t];
+      })
+    )
+  });
+  sheets.push({
+    name:"계약배치", widths:[16,60,16,16],
+    rows:[["직원","현장","시작일","종료일"]].concat(
+      state.placements.filter(p=>p.kind==="contract"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, fmt(p.start), fmt(p.end)])
+    )
+  });
+  sheets.push({
+    name:"실제배치", widths:[16,60,16,16],
+    rows:[["직원","현장","시작일","종료일"]].concat(
+      state.placements.filter(p=>p.kind==="actual"&&ids.includes(p.staffId)).map(p=>[staffById(p.staffId).name, siteById(p.siteId).name, fmt(p.start), fmt(p.end)])
+    )
+  });
+  download("직원별_배치현황_"+ymd()+".xml", buildWorkbook(sheets));
+  toast("직원별 엑셀을 내려받았습니다.","ok");
+}
+
+function openSettings(){
+  openModal(
+    '<div class="field"><label>AI 요약 방식 (대외비 보안)</label>'+
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;background:var(--gray-bg);border-radius:6px;padding:10px 12px">'+
+    '<input type="checkbox" id="set-external"'+(state.settings.external?" checked":"")+' onchange="toggleExternal(this)" style="width:auto"> 외부 AI(Gemini) 요약 사용</label>'+
+    '<div class="hint" id="ext-warn" style="margin-top:6px;font-weight:600">'+((state.settings.external)?'<span style="color:var(--red)">⚠ 현재 외부 전송 상태입니다. 대외비 배치 데이터가 Google 서버로 전송됩니다. 보안이 중요한 자료는 반드시 꺼 주세요.</span>':'<span style="color:#17805f">현재 외부 전송 없음 — 모든 분석이 브라우저 안에서만 수행됩니다. 중복 인원 판별은 로컬 계산이라 외부 없이도 정확히 동작합니다.</span>')+'</div></div>'+
+    '<div class="field" id="key-field"'+(state.settings.external?"":" style='display:none'")+'><label>Gemini API 키</label><input type="password" id="set-key" value="'+esc(state.settings.apiKey)+'" placeholder="외부 전송을 켠 경우에만 필요합니다"><div class="hint">키가 없으면 로컬 분석으로 동작합니다.</div></div>'+
+    '<div class="field"><label>모델</label><select id="set-model">'+["gemini-2.0-flash","gemini-2.5-flash","gemini-2.5-pro"].map(m=>'<option value="'+m+'"'+(state.settings.model===m?" selected":"")+'>'+m+'</option>').join("")+'</select></div>'+
+    '<div class="field"><label>데이터 관리</label><div class="btn-row"><button class="btn sm" onclick="resetDemo()">예시 데이터 다시 불러오기</button><button class="btn sm danger" onclick="clearAll()">전체 데이터 지우기</button></div><div class="hint">데이터는 브라우저에 임시 저장됩니다.</div></div>'+
+    '<div class="btn-row"><button class="btn primary" onclick="saveSettings()">설정 저장</button></div>',
+    "설정");
+}
+function toggleExternal(el){
+  const on=el.checked;
+  document.getElementById("key-field").style.display=on?"":"none";
+  document.getElementById("ext-warn").innerHTML=on
+    ? '<span style="color:var(--red)">⚠ 현재 외부 전송 상태입니다. 대외비 배치 데이터가 Google 서버로 전송됩니다. 보안이 중요한 자료는 반드시 꺼 주세요.</span>'
+    : '<span style="color:#17805f">현재 외부 전송 없음 — 모든 분석이 브라우저 안에서만 수행됩니다. 중복 인원 판별은 로컬 계산이라 외부 없이도 정확히 동작합니다.</span>';
+}
+function saveSettings(){
+  const external=document.getElementById("set-external").checked;
+  state.settings.external=external;
+  if(external) state.settings.apiKey=fieldVal("set-key").trim();
+  else state.settings.apiKey="";
+  state.settings.model=fieldVal("set-model");
+  save(); hideModal(); updatePrivacyBadge(); toast("설정이 저장되었습니다.","ok");
+}
+function resetDemo(){
+  if(!confirm("예시 데이터를 다시 불러올까요? 현재 입력한 내용은 지워집니다.")) return;
+  state=seed(); save(); hideModal(); toast("예시 데이터를 다시 불러왔습니다.","ok");
+  switchTab("overview");
+}
+function clearAll(){
+  if(!confirm("모든 데이터를 지울까요? 되돌릴 수 없습니다.")) return;
+  state={version:1,settings:state.settings,sites:[],staff:[],placements:[],changes:[]};
+  save(); hideModal(); toast("모든 데이터를 지웠습니다.");
+  switchTab("overview");
+}
+
+function buildFacts(){
+  const overlaps=calcOverlaps().map(o=>({
+    staffId:o.staffId, staffName:o.staff.name, job:o.staff.job,
+    conflicts:o.conflicts.map(c=>({
+      siteA:siteById(c.a.siteId).name, siteB:siteById(c.b.siteId).name,
+      start:c.start, end:c.end, days:Math.round((new Date(c.end)-new Date(c.start))/86400000)+1
+    }))
+  }));
+  const changes=state.changes.map(c=>({
+    staffId:c.staffId, staffName:staffById(c.staffId)?staffById(c.staffId).name:"?",
+    before:c.before, after:c.after, changeDate:c.changeDate, changeReason:c.changeReason||"변경 사유 미기록"
+  }));
+  const diffs=[];
+  const byStaff={};
+  state.placements.forEach(p=>{ (byStaff[p.staffId]=byStaff[p.staffId]||[]).push(p); });
+  Object.keys(byStaff).forEach(sid=>{
+    const ps=byStaff[sid];
+    const contracts=ps.filter(p=>p.kind==="contract");
+    const actuals=ps.filter(p=>p.kind==="actual");
+    if(!contracts.length&&!actuals.length) return;
+    const st=staffById(sid);
+    contracts.forEach(cc=>{
+      const same=actuals.find(a=>a.siteId===cc.siteId);
+      if(same){
+        const samePeriod=same.start===cc.start&&same.end===cc.end;
+        diffs.push({staffId:sid, staffName:st.name, job:st.job, site:siteById(cc.siteId).name,
+          contract:{start:cc.start,end:cc.end}, actual:{start:same.start,end:same.end},
+          kind:samePeriod?"same":"period"});
+      }else{
+        diffs.push({staffId:sid, staffName:st.name, job:st.job, site:siteById(cc.siteId).name,
+          contract:{start:cc.start,end:cc.end}, actual:null, kind:"noActual"});
+      }
+    });
+    actuals.forEach(a=>{
+      const match=contracts.find(c=>c.siteId===a.siteId);
+      if(!match){
+        diffs.push({staffId:sid, staffName:st.name, job:st.job, site:siteById(a.siteId).name,
+          contract:null, actual:{start:a.start,end:a.end}, kind:"noContract"});
+      }
+    });
+  });
+  return {overlaps,changes,diffs};
+}
+function ruleSummary(kind,item){
+  if(kind==="overlap") return item.staffName+"님이 "+item.conflicts[0].siteA+"와 "+item.conflicts[0].siteB+"에 동시에 배치되어 있습니다. 겹치는 기간은 "+fmt(item.conflicts[0].start)+" ~ "+fmt(item.conflicts[0].end)+" ("+item.conflicts[0].days+"일)입니다.";
+  if(kind==="change"){
+    const b=item.before? (item.before.siteName+"("+fmt(item.before.start)+"~"+fmt(item.before.end)+")") : "신규 배치";
+    return item.staffName+"님의 배치가 "+b+"에서 "+item.after.siteName+"("+fmt(item.after.start)+"~"+fmt(item.after.end)+")로 변경되었습니다. 변경일 "+fmt(item.changeDate)+", 사유: "+item.changeReason+".";
+  }
+  if(kind==="diff"){
+    if(item.kind==="noActual") return "계약배치("+fmt(item.contract.start)+"~"+fmt(item.contract.end)+")가 있지만 실제배치가 입력되지 않아 비교할 수 없습니다. 확인 필요.";
+    if(item.kind==="noContract") return "실제배치("+fmt(item.actual.start)+"~"+fmt(item.actual.end)+")만 존재합니다. 추가 투입 가능성이 있어 확인이 필요합니다.";
+    if(item.kind==="same") return "계약배치와 실제배치가 동일합니다. 차이 없음.";
+    return "기간 변경: 계약배치("+fmt(item.contract.start)+"~"+fmt(item.contract.end)+") → 실제배치("+fmt(item.actual.start)+"~"+fmt(item.actual.end)+").";
+  }
+  return "";
+}
+function computeAI(){
+  const facts=buildFacts();
+  const out={overlaps:facts.overlaps.map(i=>({...i,summary:ruleSummary("overlap",i)})),
+             changes:facts.changes.map(i=>({...i,summary:ruleSummary("change",i)})),
+             diffs:facts.diffs.map(i=>({...i,summary:ruleSummary("diff",i)}))};
+  return out;
+}
+async function enhanceWithGemini(result){
+  if(!(state.settings&&state.settings.external)||!state.settings.apiKey) return {result, used:false};
+  const model=state.settings.model||"gemini-2.0-flash";
+  const prompt={
+    instruction:"주어진 배치 데이터만을 바탕으로 요약하세요. 데이터에 없는 내용을 절대 만들지 마세요. 정보가 부족하면 \"확인 필요\"라고 표현하세요. 각 항목의 summary는 한국어 1~2문장으로 작성하세요. 반드시 같은 개수·같은 순서로 배열을 반환하세요.",
+    data:result
+  };
+  try{
+    const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+encodeURIComponent(key),{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contents:[{parts:[{text:JSON.stringify(prompt)}]}],generationConfig:{responseMimeType:"application/json",temperature:0.2}})
+    });
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const data=await res.json();
+    const txt=data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts[0].text;
+    if(!txt) throw new Error("no text");
+    const parsed=JSON.parse(txt.replace(/```json|```/g,""));
+    const m=parsed;
+    if(m.overlaps&&Array.isArray(m.overlaps)) m.overlaps.forEach((s,i)=>{ if(s&&s.summary&&result.overlaps[i]) result.overlaps[i].summary=s.summary; });
+    if(m.changes&&Array.isArray(m.changes)) m.changes.forEach((s,i)=>{ if(s&&s.summary&&result.changes[i]) result.changes[i].summary=s.summary; });
+    if(m.diffs&&Array.isArray(m.diffs)) m.diffs.forEach((s,i)=>{ if(s&&s.summary&&result.diffs[i]) result.diffs[i].summary=s.summary; });
+    return {result,used:true};
+  }catch(e){
+    return {result,used:false,error:String(e)};
+  }
+}
+
+function renderAI(){
+  const view=document.getElementById("view-ai");
+  const hasData=state.placements.length>0;
+  if(!hasData){
+    view.innerHTML='<div class="section-title"><h2>AI 점검·요약</h2><p>중복 배치, 배치 변경 내용, 계약배치와 실제배치의 차이를 확인합니다.</p></div>'+
+      '<div class="panel"><div class="empty">분석할 배치 정보가 없습니다.<br><span class="muted">배치 관리에서 현장과 직원, 배치를 먼저 등록해 주세요.</span></div></div>';
+    return;
+  }
+  const ext=!!(state.settings&&state.settings.external);
+  const aiLbl = (ui.aiSource==="ai"&&ext) ? "Gemini AI (외부 전송)" : "완전 로컬 분석";
+  const last=(ui.aiTime?'<span class="muted small">마지막 실행: '+ui.aiTime+' · 분석·요약 방식: <span class="pill '+(ui.aiSource==="ai"&&ext?"ai":"rule")+'">'+aiLbl+'</span></span>':'<span class="muted small">아직 실행 전입니다.</span>');
+  view.innerHTML=
+    '<div class="section-title"><h2>AI 점검·요약</h2><p>저장된 배치 정보를 분석해 중복 배치, 변경 내용, 계약/실제배치 차이를 보여줍니다.</p></div>'+
+    '<div class="panel"><div class="panel-head"><h3>점검 실행</h3><div class="spacer"></div>'+
+    '<div class="btn-row"><button class="btn primary" id="ai-run-btn" onclick="runAI()">▶ AI 점검 실행</button></div></div>'+
+    '<div class="panel-body">'+last+'<div class="hint" style="margin-top:6px">'+(ext?'<span style="color:var(--red);font-weight:600">⚠ 외부 전송 ON — 요약을 위해 데이터가 Google로 전송됩니다.</span> ': '<span style="color:#17805f;font-weight:600">● 완전 로컬 — 데이터가 브라우저 밖으로 나가지 않습니다.</span> ')+'중복 인원·계약/실제 차이 판별은 로컬 계산이라 외부 없이도 정확합니다. AI는 데이터에 없는 내용을 만들지 않으며, 판단이 어려운 항목은 [확인 필요]로 표시됩니다.</div></div></div>'+
+    '<div id="ai-results"><div class="panel"><div class="empty">[AI 점검 실행] 버튼을 누르면 결과가 여기에 표시됩니다.</div></div></div>';
+}
+async function runAI(){
+  const btn=document.getElementById("ai-run-btn");
+  const box=document.getElementById("ai-results");
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> 분석 중...'; }
+  const facts=computeAI();
+  const {result,used}=await enhanceWithGemini(facts);
+  ui.aiResult=result; ui.aiSource=used?"ai":"rule";
+  const now=new Date();
+  ui.aiTime=now.getFullYear()+"."+String(now.getMonth()+1).padStart(2,"0")+"."+String(now.getDate()).padStart(2,"0")+" "+String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  renderAI();
+  renderAIResults(result,used);
+  if(btn){ btn.disabled=false; btn.innerHTML="▶ AI 점검 실행"; }
+  if(!used&&state.settings.external&&state.settings.apiKey) toast("외부 AI 요약에 실패해 로컬 분석으로 표시했습니다.","err");
+  toast("점검이 완료되었습니다.","ok");
+}
+function aiItemOverlap(o){
+  const rows=o.conflicts.map(c=>
+    '<div class="ai-item"><h4>'+esc(o.staffName)+' <span class="muted">· '+esc(o.job)+'</span> <span class="badge red">중복</span></h4>'+
+    '<div class="grid3"><div><b>현장 1</b><br>'+esc(c.siteA)+'</div><div><b>현장 2</b><br>'+esc(c.siteB)+'</div><div><b>겹치는 기간</b><br>'+fmt(c.start)+' ~ '+fmt(c.end)+' ('+c.days+'일)</div></div>'+
+    '<div class="ai-summary">'+esc(o.summary)+'</div></div>');
+  return rows.join("");
+}
+function aiItemChange(ch){
+  const bef=ch.before? esc(ch.before.siteName)+'<br><span class="mono">'+fmt(ch.before.start)+' ~ '+fmt(ch.before.end)+'</span>' : '<span class="faint">신규 배치</span>';
+  return '<div class="ai-item"><h4>'+esc(ch.staffName)+' <span class="badge amber">변경</span>'+(ch.demo?' <span class="badge demo">예시</span>':'')+'</h4>'+
+    '<div class="grid3"><div><b>변경 전</b><br>'+bef+'</div><div><b>변경 후</b><br>'+esc(ch.after.siteName)+'<br><span class="mono">'+fmt(ch.after.start)+' ~ '+fmt(ch.after.end)+'</span></div><div><b>변경일</b><br>'+fmt(ch.changeDate)+'</div></div>'+
+    '<div class="small muted"><b>변경 사유</b> · '+esc(ch.changeReason)+'</div>'+
+    '<div class="ai-summary">'+esc(ch.summary)+'</div></div>';
+}
+function aiItemDiff(d){
+  const badge=d.kind==="same"?'<span class="badge demo" style="background:var(--green-bg);color:var(--green)">차이 없음</span>':
+            d.kind==="noActual"?'<span class="badge confirm">비교 불가</span>':
+            d.kind==="noContract"?'<span class="badge red">추가 투입</span>':'<span class="badge amber">기간 변경</span>';
+  const c=d.contract? esc(d.site)+'<br><span class="mono">'+fmt(d.contract.start)+' ~ '+fmt(d.contract.end)+'</span>' : '<span class="faint">계약배치 미입력</span>';
+  const a=d.actual? esc(d.site)+'<br><span class="mono">'+fmt(d.actual.start)+' ~ '+fmt(d.actual.end)+'</span>' : '<span class="faint">실제배치 미입력</span>';
+  return '<div class="ai-item"><h4>'+esc(d.staffName)+' <span class="muted">· '+esc(d.job)+'</span> '+badge+'</h4>'+
+    '<div class="grid3"><div><b>계약배치</b><br>'+c+'</div><div><b>실제배치</b><br>'+a+'</div><div><b>구분</b><br>'+(d.kind==="same"?"동일":d.kind==="noActual"?"실제배치 없음":d.kind==="noContract"?"계약배치 없음":"기간 변경")+'</div></div>'+
+    '<div class="ai-summary">'+esc(d.summary)+'</div></div>';
+}
+function renderAIResults(r,used){
+  const ext=!!(state.settings&&state.settings.external);
+  const src='<span class="pill '+(used&&ext?"ai":"rule")+'">'+((used&&ext)?"Gemini AI 요약 (외부)":"완전 로컬 분석")+'</span>';
+  const n=state.placements.length;
+  let html='<div class="filters" style="margin-bottom:12px"><span class="chip gray">분석 배치 '+n+'건</span>'+src+'</div>';
+  html+='<div class="ai-cards">';
+
+  html+='<div class="ai-card full"><div class="ai-card-head"><h3>1. 중복 배치 <span class="muted small">('+(r.overlaps.length)+'건)</span></h3>'+
+    (r.overlaps.length?'<span class="chip red">⚠ '+r.overlaps.reduce((s,o)=>s+o.conflicts.length,0)+'건 중복</span>':'<span class="chip green">없음</span>')+'</div>'+
+    '<div class="ai-card-body">'+(r.overlaps.length? r.overlaps.map(aiItemOverlap).join("") : '<div class="empty" style="padding:18px">서로 다른 현장에 배치기간이 겹치는 직원이 없습니다.</div>')+'</div></div>';
+
+  html+='<div class="ai-card"><div class="ai-card-head"><h3>2. 배치 변경 내용 <span class="muted small">('+r.changes.length+'건)</span></h3></div>'+
+    '<div class="ai-card-body">'+(r.changes.length? r.changes.map(aiItemChange).join("") : '<div class="empty" style="padding:18px">기록된 배치 변경이 없습니다.</div>')+'</div></div>';
+
+  html+='<div class="ai-card"><div class="ai-card-head"><h3>3. 계약배치 vs 실제배치 <span class="muted small">('+r.diffs.length+'건)</span></h3></div>'+
+    '<div class="ai-card-body">'+(r.diffs.length? r.diffs.map(aiItemDiff).join("") : '<div class="empty" style="padding:18px">비교할 배치가 없습니다.</div>')+'</div></div>';
+
+  html+='</div>';
+  document.getElementById("ai-results").innerHTML=html;
+}
+switchTab("overview");
+updatePrivacyBadge();
+
+</script>
+</body>
+</html>
