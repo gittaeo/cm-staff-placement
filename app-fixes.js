@@ -95,7 +95,8 @@ async function parseFiles(files,append){
         if(multi){
           const topVals=rowMap(rows[multi.topIndex]),subVals=rowMap(rows[multi.headerIndex]);
           const topIndexes=Object.keys(topVals).map(Number).sort((a,b)=>a-b);
-          const headerName=i=>{const own=normalizeText(topVals[i]);const parentIndex=[...topIndexes].reverse().find(x=>x<=i);const parent=own||normalizeText(topVals[parentIndex]);const child=normalizeText(subVals[i]);return [parent,child].filter(Boolean).filter((x,n,a)=>a.indexOf(x)===n).join(" - ")||("열 "+(i+1));};
+          const headerDate=v=>{const s=normalizeText(v);if(!/^\d+(?:\.\d+)?$/.test(s)||Number(s)<30000||Number(s)>100000)return "";const d=parseDateValue(Number(s),wb.date1904);return d?d.slice(0,7):"";};
+          const headerName=i=>{const own=normalizeText(topVals[i]);const parentIndex=[...topIndexes].reverse().find(x=>x<=i);const parent=own||normalizeText(topVals[parentIndex]);const childRaw=subVals[i];const month=headerDate(childRaw);if(month)return "월별 현황 - "+month;const child=normalizeText(childRaw);return [parent,child].filter(Boolean).filter((x,n,a)=>a.indexOf(x)===n).join(" - ")||("열 "+(i+1));};
           for(let ri=multi.headerIndex+1;ri<rows.length;ri++){const vals=rowMap(rows[ri]);if(!Object.values(vals).some(v=>normalizeText(v)!==""))continue;fd.rawRows++;importReport.rawRows++;
             const originalData={};Object.keys(vals).forEach(i=>originalData[headerName(Number(i))]=vals[i]??"");
             const employeeName=normalizeText(vals[multi.employeeName]),siteName=normalizeText(vals[multi.siteName]),role=multi.role==null?"":normalizeText(vals[multi.role]);
@@ -126,8 +127,9 @@ async function parseFiles(files,append){
     importReport.details.push(fd);
   }
   ensureLegacyState();
-  const exportDateAudit=[];allAssignments.filter(x=>!x.excludedReason).forEach(x=>{const out=exportObject(x,new Set());Object.keys(x.originalData||{}).filter(isOriginalDateColumn).forEach(k=>exportDateAudit.push({column:k,value:out[k]}));});
-  document.documentElement.dataset.exportDateAudit=JSON.stringify({count:exportDateAudit.length,valid:exportDateAudit.every(x=>x.value===""||/^\d{4}-\d{2}-\d{2}$/.test(String(x.value))),sample:exportDateAudit.slice(0,8)});
+  const exportDateAudit=[],attributeHeaders=new Set();allAssignments.filter(x=>!x.excludedReason).forEach(x=>{const out=exportObject(x,new Set());Object.keys(x.originalData||{}).forEach(k=>attributeHeaders.add(k));Object.keys(x.originalData||{}).filter(isOriginalDateColumn).forEach(k=>exportDateAudit.push({column:k,value:out[k]}));});
+  const badAttributeHeaders=[...attributeHeaders].filter(k=>/\b(?:3|4|5|6|7)\d{4}\b/.test(k));
+  document.documentElement.dataset.exportDateAudit=JSON.stringify({count:exportDateAudit.length,valid:exportDateAudit.every(x=>x.value===""||/^\d{4}-\d{2}-\d{2}$/.test(String(x.value)))&&badAttributeHeaders.length===0,badAttributeHeaders,sample:exportDateAudit.slice(0,8),attributeHeaderSample:[...attributeHeaders].filter(k=>k.startsWith("월별 현황")).slice(0,8)});
   ui.import={step:"done",result:{imported:importReport.accepted,skipped:importReport.excluded.length,dupCount:calculateAssignmentOverlaps(allAssignments).length,dupStaff:[]}}; renderOverview();toast(importReport.accepted+"건 처리 완료","ok");
 }
 
@@ -163,6 +165,7 @@ function applyOverviewSearch(value){
 }
 window.handleSearchCompositionEnd=function(event){composing=false;clearTimeout(searchTimer);applyOverviewSearch(event&&event.target&&event.target.value);};
 window.handleOverviewSearch=function(event){const value=safe(event&&event.target&&event.target.value);if(composing||event&&event.isComposing)return;clearTimeout(searchTimer);searchTimer=setTimeout(()=>applyOverviewSearch(value),40);};
+window.setOverviewKindFilter=function(kind){ui.ovKind=["contract","actual","pending"].includes(kind)?kind:"all";renderOverview();};
 window.renderOverview=function(){ oldRenderOverview(); const search=document.getElementById("ov-search");if(search){search.placeholder="직원명, 직원번호 또는 직무";}
   const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(allAssignments);const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("서로 다른 현장 간 중복 배치 "+overlaps.length+"건을 확인해 주세요."):"현재 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
   document.querySelectorAll(".mono").forEach(x=>{x.style.whiteSpace="nowrap";x.style.minWidth="104px";}); document.querySelectorAll(".panel-body.tight").forEach(x=>x.style.overflowX="auto");
@@ -209,7 +212,7 @@ window.exportSites=function(){const ids=[...document.querySelectorAll('.exp-site
 window.save=function(){};try{localStorage.removeItem(STORAGE_KEY);sessionStorage.clear();}catch(e){}
 state.settings={apiKey:"",model:"",external:false};window.enhanceWithGemini=async result=>({result,used:false});
 document.querySelector('.icon-btn[onclick="openSettings()"]')?.remove();
-const style=document.createElement("style");style.textContent='.mono,td:nth-child(5),td:nth-child(6){white-space:nowrap;min-width:108px}.panel-body.tight{overflow-x:auto}.tl-chart{min-width:720px;overflow:visible}.tl{min-width:1020px}.panel:has(.tl){overflow-x:auto}.bar{min-width:3px}.bar.blue{background:var(--blue)}.bar.green{background:var(--green)}.bar.amber{background:var(--amber)}.ov-overlay{background:repeating-linear-gradient(45deg,#e04444,#e04444 7px,#b91c1c 7px,#b91c1c 14px);border:2px solid #991b1b;box-shadow:0 1px 3px rgba(127,29,29,.35);z-index:5;opacity:1;pointer-events:none}.tl-meta span{white-space:nowrap}';document.head.appendChild(style);
+const style=document.createElement("style");style.textContent='.mono,td:nth-child(5),td:nth-child(6){white-space:nowrap;min-width:108px}.panel-body.tight{overflow-x:auto}.tl-chart{min-width:720px;overflow:visible}.tl{min-width:1020px}.panel:has(.tl){overflow-x:auto}.bar{min-width:3px}.bar.blue{background:var(--blue)}.bar.green{background:var(--green)}.bar.amber{background:var(--amber)}.ov-overlay{background:repeating-linear-gradient(45deg,#e04444,#e04444 7px,#b91c1c 7px,#b91c1c 14px);border:2px solid #991b1b;box-shadow:0 1px 3px rgba(127,29,29,.35);z-index:5;opacity:1;pointer-events:none}.tl-meta span{white-space:nowrap}.kind-filter-group{display:inline-flex;gap:4px;padding:3px;background:var(--gray-bg);border-radius:8px}.kind-filter-btn{border:1px solid transparent;background:transparent;color:var(--gray);padding:5px 9px;border-radius:6px;font-size:12px;font-weight:700}.kind-filter-btn:hover{background:#fff}.kind-filter-btn.active{background:#fff;color:var(--primary);border-color:var(--primary-border);box-shadow:0 1px 2px rgba(0,0,0,.08)}';document.head.appendChild(style);
 
 // Preserve seed/manual rows in memory so all existing screens continue to work before an upload.
 window.__placementTest={normalizeText,normalizeHeader,parseDateValue,findHeader,findMultiRowPlacementLayout,employeeKey,siteKey,statusLabel,calculateAssignmentOverlaps,exportColumns,exportObject,exportOriginalValue,getRows:()=>allAssignments,getReport:()=>importReport,parseFiles,exportRows};

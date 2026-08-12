@@ -402,14 +402,16 @@ function renderOverview(){
   '</div>';
 
   const siteOptions='<option value="all">전체 현장</option>'+state.sites.map(s=>'<option value="'+s.id+'"'+(ui.ovSite===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
-  const kindOptions=["all","contract","actual","pending"].map(k=>'<option value="'+k+'"'+(ui.ovKind===k?" selected":"")+'>'+(k==="all"?"전체 구분":KIND[k])+'</option>').join("");
+  const kindOptions=["all","contract","actual","pending"].map(k=>'<option value="'+k+'"'+(ui.ovKind===k?" selected":"")+'>'+(k==="all"?"전체 배치":k==="contract"?"계약배치":k==="actual"?"실제배치":"변경 예정")+'</option>').join("");
+  const kindQuick=[['all','전체'],['contract','계약배치'],['actual','실제배치'],['pending','변경 예정']].map(([k,label])=>'<button type="button" class="kind-filter-btn '+(ui.ovKind===k?'active':'')+'" onclick="setOverviewKindFilter(\''+k+'\')">'+label+'</button>').join('');
 
   const filterBar=
   '<div class="panel"><div class="panel-head"><h3>현황 필터</h3><div class="spacer"></div>'+
   '<div class="filters">'+
     '<label>현장 <select id="ov-site" onchange="ui.ovSite=this.value;renderOverview()">'+siteOptions+'</select></label>'+
     '<label>직원명 검색 <input type="search" id="ov-search" value="'+esc(ui.ovSearch)+'" oninput="handleOverviewSearch(event)" onsearch="handleOverviewSearch(event)" oncompositionstart="handleSearchCompositionStart(event)" oncompositionend="handleSearchCompositionEnd(event)" placeholder="이름 또는 직무"></label>'+
-    '<label>구분 <select id="ov-kind" onchange="ui.ovKind=this.value;renderOverview()">'+kindOptions+'</select></label>'+
+    '<label>구분 <select id="ov-kind" onchange="setOverviewKindFilter(this.value)">'+kindOptions+'</select></label>'+
+    '<div class="kind-filter-group" aria-label="배치 구분 빠른 필터">'+kindQuick+'</div>'+
     '<span class="chip red '+(ui.ovOverlapOnly?"on":"")+'" onclick="toggleOverlapOnly()">⚠ 중복 배치만 보기</span>'+
   '</div></div></div>';
 
@@ -1673,6 +1675,6 @@ switchTab("overview");
 updatePrivacyBadge();
 
 </script>
-<script src="app-fixes.js?v=20260812-4"></script>
+<script src="app-fixes.js?v=20260812-6"></script>
 </body>
 </html>
