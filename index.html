@@ -569,6 +569,7 @@ async function parseXlsx(buf){
     const rows=[];
     doc.querySelectorAll("sheetData row").forEach(tr=>{
       const cells=[];
+      cells.sourceRow=parseInt(tr.getAttribute("r")||"0",10)||null;
       tr.querySelectorAll("c").forEach(c=>{
         const ref=c.getAttribute("r")||"";
         const idx=colIndex(ref.replace(/[0-9]/g,""));
@@ -612,7 +613,7 @@ function parseCSV(text){
     else if(ch!=="\r") cur+=ch;
   }
   if(cur!==""||row.length){ row.push(cur); if(row.some(c=>c.trim()!=="")) rows.push(row); }
-  const grid=rows.map(r=>r.map((v,i)=>({i,val:cellNum(v)})));
+  const grid=rows.map((r,rowIndex)=>{const cells=r.map((v,i)=>({i,val:cellNum(v)}));cells.sourceRow=rowIndex+1;return cells;});
   if(!grid.length) throw new Error("CSV에 읽을 데이터가 없습니다.");
   return {sheets:[{name:"시트1", rows:grid}], date1904:false};
 }
@@ -1672,6 +1673,6 @@ switchTab("overview");
 updatePrivacyBadge();
 
 </script>
-<script src="app-fixes.js"></script>
+<script src="app-fixes.js?v=20260812-4"></script>
 </body>
 </html>

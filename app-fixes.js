@@ -11,7 +11,7 @@ const HEADER_ALIASES={
   assignmentType:["배치구분","구분","배치상태","계약실제"]
 };
 let allAssignments=[];
-let importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],duplicateSource:0,errors:[],details:[]};
+let importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};
 let composing=false;
 let searchTimer=0;
 
@@ -43,6 +43,31 @@ function findHeader(sheet){
     if(score>best.score)best={index,score,map,headers};
   }); return best;
 }
+function findMultiRowPlacementLayout(sheet){
+  const rows=Array.isArray(sheet&&sheet.rows)?sheet.rows:[];
+  for(let upper=0;upper<Math.min(30,rows.length);upper++){
+    const top=rowMap(rows[upper]), topEntries=Object.entries(top).map(([i,v])=>[Number(i),normalizeHeader(v)]);
+    const employee=topEntries.find(([,v])=>v==="성명"||v==="직원명"||v==="이름");
+    const site=topEntries.find(([,v])=>v==="프로젝트명"||v==="현장명"||v==="사업명");
+    if(!employee||!site)continue;
+    const roleCandidates=topEntries.filter(([,v])=>v.includes("공종")||v.includes("직무")||v.includes("직급"));
+    const role=(roleCandidates.find(([,v])=>v.includes("배치계획"))||roleCandidates.at(-1)||[])[0];
+    const contractParent=topEntries.find(([,v])=>v.includes("계약서기준")||v.includes("계약배치"));
+    const actualParent=topEntries.find(([,v])=>v.includes("실배치")||v.includes("실제배치"));
+    for(let lower=upper+1;lower<Math.min(rows.length,upper+5);lower++){
+      const sub=rowMap(rows[lower]), subEntries=Object.entries(sub).map(([i,v])=>[Number(i),normalizeHeader(v)]);
+      const starts=subEntries.filter(([,v])=>v==="투입"||v==="시작일"||v==="착수일").map(x=>x[0]);
+      const ends=subEntries.filter(([,v])=>v==="철수"||v==="종료일"||v==="완료일").map(x=>x[0]);
+      if(starts.length<1||ends.length<1)continue;
+      const after=(arr,parent)=>arr.find(i=>parent==null||i>=parent);
+      const contractStart=after(starts,contractParent&&contractParent[0]),contractEnd=after(ends,contractParent&&contractParent[0]);
+      const actualStart=after(starts,actualParent&&actualParent[0]),actualEnd=after(ends,actualParent&&actualParent[0]);
+      if(contractStart==null||contractEnd==null)return null;
+      return {headerIndex:lower,topIndex:upper,employeeName:employee[0],siteName:site[0],role:role??null,contractStart,contractEnd,actualStart:actualParent?actualStart:null,actualEnd:actualParent?actualEnd:null};
+    }
+  }
+  return null;
+}
 function sourceFingerprint(r){ return [employeeKey(r),siteKey(r.siteName),r.startDate,r.endDate,normalizeText(r.assignmentType)].join("|"); }
 function ensureLegacyState(){
   const sites=new Map(),staff=new Map(); state.sites=[];state.staff=[];state.placements=[];state.changes=Array.isArray(state.changes)?state.changes:[];
@@ -60,18 +85,38 @@ function calculateAssignmentOverlaps(rows){
 function overlapSet(){ const s=new Set(); calculateAssignmentOverlaps(allAssignments).forEach(x=>{s.add(x.a.rowId);s.add(x.b.rowId);});return s; }
 
 async function parseFiles(files,append){
-  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],duplicateSource:0,errors:[],details:[]};}
+  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
   const seen=new Set(allAssignments.filter(r=>!r.excludedReason).map(sourceFingerprint));
   for(const file of list){ const fd={file:file.name,sheets:0,rawRows:0,accepted:0,excluded:0,error:""}; importReport.files++;
     try{
       if(/\.xls$/i.test(file.name)) throw new Error("구형 XLS 바이너리는 이 브라우저 내장 판독기가 지원하지 않습니다. XLSX 또는 CSV로 저장해 주세요.");
       const wb=await parseWorkbook(file); const sheets=Array.isArray(wb.sheets)?wb.sheets:[];
-      for(const sh of sheets){ fd.sheets++;importReport.sheets++; const rows=Array.isArray(sh.rows)?sh.rows:[]; if(!rows.length)continue; const h=findHeader(sh);
-        if(h.score<2){importReport.errors.push({file:file.name,sheet:sh.name,error:"헤더를 찾지 못했습니다."});continue;}
+      for(const sh of sheets){ fd.sheets++;importReport.sheets++; const rows=Array.isArray(sh.rows)?sh.rows:[]; if(!rows.length)continue; const multi=findMultiRowPlacementLayout(sh); const h=multi?null:findHeader(sh);
+        if(multi){
+          const topVals=rowMap(rows[multi.topIndex]),subVals=rowMap(rows[multi.headerIndex]);
+          const topIndexes=Object.keys(topVals).map(Number).sort((a,b)=>a-b);
+          const headerName=i=>{const own=normalizeText(topVals[i]);const parentIndex=[...topIndexes].reverse().find(x=>x<=i);const parent=own||normalizeText(topVals[parentIndex]);const child=normalizeText(subVals[i]);return [parent,child].filter(Boolean).filter((x,n,a)=>a.indexOf(x)===n).join(" - ")||("열 "+(i+1));};
+          for(let ri=multi.headerIndex+1;ri<rows.length;ri++){const vals=rowMap(rows[ri]);if(!Object.values(vals).some(v=>normalizeText(v)!==""))continue;fd.rawRows++;importReport.rawRows++;
+            const originalData={};Object.keys(vals).forEach(i=>originalData[headerName(Number(i))]=vals[i]??"");
+            const employeeName=normalizeText(vals[multi.employeeName]),siteName=normalizeText(vals[multi.siteName]),role=multi.role==null?"":normalizeText(vals[multi.role]);
+            const base={employeeId:"",employeeName,siteName,role,sourceFile:file.name,sourceSheet:safe(sh.name,"시트"),sourceRow:rows[ri].sourceRow||ri+1,originalData,dateError:false,duplicateSource:false};
+            const pairs=[{type:"계약배치",s:multi.contractStart,e:multi.contractEnd}];if(multi.actualStart!=null&&multi.actualEnd!=null)pairs.push({type:"실제배치",s:multi.actualStart,e:multi.actualEnd});
+            let made=0;
+            for(const pair of pairs){const start=parseDateValue(vals[pair.s],wb.date1904),end=parseDateValue(vals[pair.e],wb.date1904);if(!start&&!end)continue;
+              const r={...base,rowId:uid(),startDate:start,endDate:end,assignmentType:pair.type,excludedReason:""};const reasons=[];
+              if(!employeeName||employeeName==="-")reasons.push("직원명 없음");if(!siteName)reasons.push("현장명 없음");if(!start||!end){reasons.push("날짜 확인 필요");r.dateError=true;}else if(end<start){reasons.push("잘못된 기간");r.dateError=true;}
+              r.excludedReason=reasons.join(", ");const fp=sourceFingerprint(r);if(!r.excludedReason&&seen.has(fp)){r.duplicateSource=true;r.excludedReason="중복 원본 데이터";importReport.duplicateSource++;}else if(!r.excludedReason)seen.add(fp);
+              allAssignments.push(r);made++;if(r.excludedReason){fd.excluded++;importReport.excluded.push(r);}else{fd.accepted++;importReport.accepted++;}
+            }
+            if(!made&&employeeName&&employeeName!=="-"){const r={...base,rowId:uid(),startDate:"",endDate:"",assignmentType:"",dateError:true,excludedReason:"날짜 확인 필요"};allAssignments.push(r);fd.excluded++;importReport.excluded.push(r);}
+          }
+          continue;
+        }
+        if(h.score<2){fd.skippedSheets=(fd.skippedSheets||0)+1;importReport.skippedSheets.push({file:file.name,sheet:safe(sh.name,"시트"),reason:"배치 필수 헤더 없음",rows:rows.length});continue;}
         for(let ri=h.index+1;ri<rows.length;ri++){ const vals=rowMap(rows[ri]); if(!Object.values(vals).some(v=>normalizeText(v)!==""))continue; fd.rawRows++;importReport.rawRows++;
           const originalData={}; Object.keys(vals).forEach(i=>{const name=normalizeText(h.headers[i])||("열 "+(Number(i)+1));originalData[name]=vals[i]===undefined||vals[i]===null?"":vals[i];});
           const get=k=>h.map[k]===undefined?"":vals[h.map[k]]; const start=parseDateValue(get("startDate"),wb.date1904),end=parseDateValue(get("endDate"),wb.date1904);
-          const r={rowId:uid(),employeeId:normalizeText(get("employeeId")),employeeName:normalizeText(get("employeeName")),siteName:normalizeText(get("siteName")),role:normalizeText(get("role")),startDate:start,endDate:end,assignmentType:kindLabel(get("assignmentType")),sourceFile:file.name,sourceSheet:safe(sh.name,"시트"),sourceRow:ri+1,originalData,dateError:false,excludedReason:"",duplicateSource:false};
+          const r={rowId:uid(),employeeId:normalizeText(get("employeeId")),employeeName:normalizeText(get("employeeName")),siteName:normalizeText(get("siteName")),role:normalizeText(get("role")),startDate:start,endDate:end,assignmentType:kindLabel(get("assignmentType")),sourceFile:file.name,sourceSheet:safe(sh.name,"시트"),sourceRow:rows[ri].sourceRow||ri+1,originalData,dateError:false,excludedReason:"",duplicateSource:false};
           const reasons=[]; if(!r.employeeName&&!r.employeeId)reasons.push("직원 식별값 없음");if(!r.siteName)reasons.push("현장명 없음");if(!start||!end){reasons.push("날짜 확인 필요");r.dateError=true;}else if(end<start){reasons.push("잘못된 기간");r.dateError=true;}
           r.excludedReason=reasons.join(", "); const fp=sourceFingerprint(r); if(!r.excludedReason&&seen.has(fp)){r.duplicateSource=true;r.excludedReason="중복 원본 데이터";importReport.duplicateSource++;}else if(!r.excludedReason)seen.add(fp);
           allAssignments.push(r); if(r.excludedReason){fd.excluded++;importReport.excluded.push(r);}else{fd.accepted++;importReport.accepted++;}
@@ -80,21 +125,28 @@ async function parseFiles(files,append){
     }catch(e){fd.error=safe(e&&e.message,e);importReport.errors.push({file:file.name,sheet:"",error:fd.error});}
     importReport.details.push(fd);
   }
-  ensureLegacyState(); ui.import={step:"done",result:{imported:importReport.accepted,skipped:importReport.excluded.length,dupCount:calculateAssignmentOverlaps(allAssignments).length,dupStaff:[]}}; renderOverview();toast(importReport.accepted+"건 처리 완료","ok");
+  ensureLegacyState();
+  const exportDateAudit=[];allAssignments.filter(x=>!x.excludedReason).forEach(x=>{const out=exportObject(x,new Set());Object.keys(x.originalData||{}).filter(isOriginalDateColumn).forEach(k=>exportDateAudit.push({column:k,value:out[k]}));});
+  document.documentElement.dataset.exportDateAudit=JSON.stringify({count:exportDateAudit.length,valid:exportDateAudit.every(x=>x.value===""||/^\d{4}-\d{2}-\d{2}$/.test(String(x.value))),sample:exportDateAudit.slice(0,8)});
+  ui.import={step:"done",result:{imported:importReport.accepted,skipped:importReport.excluded.length,dupCount:calculateAssignmentOverlaps(allAssignments).length,dupStaff:[]}}; renderOverview();toast(importReport.accepted+"건 처리 완료","ok");
 }
 
 window.handleUpload=function(files){return parseFiles(files,false);};
 window.addUploadFiles=function(files){return parseFiles(files,true);};
-window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
+window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
 window.dropUpload=function(ev){ev.preventDefault();parseFiles(ev.dataTransfer.files,allAssignments.length>0);};
 
-window.renderUploadPanel=function(){ const host=document.getElementById("ov-upload");if(!host)return;const r=importReport; const has=allAssignments.length>0;
+window.renderUploadPanel=function(){ const host=document.getElementById("ov-upload");if(!host)return;const r=importReport; const has=r.files>0;
+  const excludedRows=(r.excluded||[]).map(x=>'<tr><td>'+esc(x.sourceFile)+'</td><td>'+esc(x.sourceSheet)+'</td><td>'+esc(x.sourceRow)+'</td><td>'+esc(x.employeeName||'[없음]')+'</td><td>'+esc(x.siteName||'[없음]')+'</td><td>'+esc(x.assignmentType||'[구분 없음]')+'</td><td>'+esc(x.startDate||'')+' ~ '+esc(x.endDate||'')+'</td><td><span class="chip amber">'+esc(x.excludedReason||'확인 필요')+'</span></td></tr>').join('');
+  const skippedRows=(r.skippedSheets||[]).map(x=>'<tr><td>'+esc(x.file)+'</td><td>'+esc(x.sheet)+'</td><td colspan="5">배치표가 아닌 시트 · 내용이 있는 행 '+esc(x.rows)+'개</td><td><span class="chip gray">'+esc(x.reason)+'</span></td></tr>').join('');
+  const reviewCount=(r.excluded||[]).length+(r.skippedSheets||[]).length;
   host.innerHTML='<div class="panel"><div class="panel-head"><h3>엑셀 불러오기</h3><div class="spacer"></div><span class="chip green">브라우저 메모리에서만 처리</span></div><div class="panel-body">'+
   '<div class="upload-zone" ondragover="event.preventDefault()" ondrop="dropUpload(event)" onclick="document.getElementById(\'xlsx-file\').click()"><div class="big">엑셀 파일을 선택하거나 여러 파일을 끌어 놓으세요</div><div class="small muted">지원: .xlsx · .xlsm · .csv / 모든 데이터 시트와 자동 헤더 탐색</div></div>'+
   '<input type="file" multiple id="xlsx-file" accept=".xlsx,.xls,.xlsm,.csv" class="hidden" onchange="'+(has?'addUploadFiles':'handleUpload')+'(this.files)">'+
   '<div class="btn-row" style="margin-top:12px"><button class="btn primary sm" onclick="document.getElementById(\'xlsx-file\').click()">'+(has?'파일 추가':'파일 선택')+'</button>'+(has?'<button class="btn danger sm" onclick="resetImportedData()">불러온 데이터 초기화</button>':'')+'</div>'+
   '<div class="import-note" style="margin-top:12px">엑셀 데이터는 외부로 전송되지 않으며 현재 브라우저 메모리에서만 처리됩니다.</div>'+
   (has?'<div class="cards"><div class="card"><div class="num">'+r.files+'</div><div class="lbl">불러온 파일</div></div><div class="card"><div class="num">'+r.sheets+'</div><div class="lbl">확인한 시트</div></div><div class="card"><div class="num">'+r.rawRows+'</div><div class="lbl">전체 원본 행</div></div><div class="card ok"><div class="num">'+r.accepted+'</div><div class="lbl">정상 배치</div></div><div class="card amber"><div class="num">'+r.excluded.length+'</div><div class="lbl">제외 행</div></div><div class="card"><div class="num">'+r.duplicateSource+'</div><div class="lbl">중복 원본</div></div></div>':'')+
+  (has&&reviewCount?'<details class="review-list"><summary><b>비배치·확인 필요 목록 '+reviewCount+'건</b> <span class="muted small">클릭하여 원본 위치와 사유 확인</span></summary><div class="preview-scroll" style="margin-top:10px;max-height:360px"><table><thead><tr><th>원본 파일</th><th>원본 시트</th><th>원본 행</th><th>직원명</th><th>현장명</th><th>구분</th><th>배치기간</th><th>확인 사유</th></tr></thead><tbody>'+excludedRows+skippedRows+'</tbody></table></div></details>':'')+
   (r.errors.length?'<div class="small" style="color:var(--red)">'+r.errors.map(x=>esc(x.file+' '+x.sheet+' · '+x.error)).join('<br>')+'</div>':'')+'</div></div>';
 };
 
@@ -142,7 +194,9 @@ window.renderManage=function(){
 };
 
 function exportColumns(rows){const originals=[];rows.forEach(r=>Object.keys(r.originalData||{}).forEach(k=>{if(!originals.includes(k)&&!REQUIRED_EXPORT_COLUMNS.includes(k)&&!SOURCE_COLUMNS.includes(k))originals.push(k);}));return REQUIRED_EXPORT_COLUMNS.concat(originals,SOURCE_COLUMNS);}
-function exportObject(r,overlaps){const o={"직원번호":r.employeeId,"직원명":r.employeeName,"현장명":r.siteName,"직무/직급":r.role,"배치 시작일":r.startDate,"배치 종료일":r.endDate,"배치 구분":r.assignmentType,"진행 상태":statusLabel(r),"중복 배치 여부":overlaps.has(r.rowId)?"예":"아니오","날짜 오류 여부":r.dateError?"예":"아니오"};Object.entries(r.originalData||{}).forEach(([k,v])=>{if(!(k in o))o[k]=v===undefined||v===null?"":v;});o["원본 파일명"]=r.sourceFile;o["원본 시트명"]=r.sourceSheet;o["원본 행 번호"]=r.sourceRow;return o;}
+function isOriginalDateColumn(name){const n=normalizeHeader(name);return !n.includes("일수")&&/(투입|철수|시작일|종료일|착수일|완료일)/.test(n);}
+function exportOriginalValue(name,value){if(value===undefined||value===null)return "";if(!isOriginalDateColumn(name))return value;return parseDateValue(value,false)||normalizeText(value);}
+function exportObject(r,overlaps){const o={"직원번호":r.employeeId,"직원명":r.employeeName,"현장명":r.siteName,"직무/직급":r.role,"배치 시작일":r.startDate,"배치 종료일":r.endDate,"배치 구분":r.assignmentType,"진행 상태":statusLabel(r),"중복 배치 여부":overlaps.has(r.rowId)?"예":"아니오","날짜 오류 여부":r.dateError?"예":"아니오"};Object.entries(r.originalData||{}).forEach(([k,v])=>{if(!(k in o))o[k]=exportOriginalValue(k,v);});o["원본 파일명"]=r.sourceFile;o["원본 시트명"]=r.sourceSheet;o["원본 행 번호"]=r.sourceRow;return o;}
 async function exportRows(rows,name){
   rows=Array.isArray(rows)?rows:[];const cols=exportColumns(rows);const missing=REQUIRED_EXPORT_COLUMNS.filter(x=>!cols.includes(x));const ovs=overlapSet();const objects=rows.map(r=>exportObject(r,ovs));
   if(objects.length!==rows.length||missing.length){toast("엑셀 생성 중 일부 행 또는 항목이 누락되었습니다. 내려받기를 중단하고 데이터를 다시 확인합니다.","err");throw new Error("export validation failed");}
@@ -158,7 +212,7 @@ document.querySelector('.icon-btn[onclick="openSettings()"]')?.remove();
 const style=document.createElement("style");style.textContent='.mono,td:nth-child(5),td:nth-child(6){white-space:nowrap;min-width:108px}.panel-body.tight{overflow-x:auto}.tl-chart{min-width:720px;overflow:visible}.tl{min-width:1020px}.panel:has(.tl){overflow-x:auto}.bar{min-width:3px}.bar.blue{background:var(--blue)}.bar.green{background:var(--green)}.bar.amber{background:var(--amber)}.ov-overlay{background:repeating-linear-gradient(45deg,#e04444,#e04444 7px,#b91c1c 7px,#b91c1c 14px);border:2px solid #991b1b;box-shadow:0 1px 3px rgba(127,29,29,.35);z-index:5;opacity:1;pointer-events:none}.tl-meta span{white-space:nowrap}';document.head.appendChild(style);
 
 // Preserve seed/manual rows in memory so all existing screens continue to work before an upload.
-window.__placementTest={normalizeText,normalizeHeader,parseDateValue,findHeader,employeeKey,siteKey,statusLabel,calculateAssignmentOverlaps,exportColumns,exportObject,getRows:()=>allAssignments,getReport:()=>importReport,parseFiles,exportRows};
+window.__placementTest={normalizeText,normalizeHeader,parseDateValue,findHeader,findMultiRowPlacementLayout,employeeKey,siteKey,statusLabel,calculateAssignmentOverlaps,exportColumns,exportObject,exportOriginalValue,getRows:()=>allAssignments,getReport:()=>importReport,parseFiles,exportRows};
 const selfRows=Array.from({length:148},(_,i)=>({rowId:"self"+i,employeeId:"E"+(i%59),employeeName:"직원"+(i%59),siteName:"현장"+(i%59),role:"직무",startDate:"2025-01-01",endDate:"2025-01-01",assignmentType:"계약배치",originalData:i%2?{연락처:"",비고:false}:{소속:"A",점수:0},sourceFile:"test.xlsx",sourceSheet:"Sheet1",sourceRow:i+2,dateError:false,excludedReason:""}));
 const selfCols=exportColumns(selfRows),selfMapped=selfRows.map(r=>exportObject(r,new Set()));
 document.documentElement.dataset.placementSelfTest=JSON.stringify({inputRows:selfRows.length,exportRows:selfMapped.length,overlaps:calculateAssignmentOverlaps(selfRows).length,unionColumns:["연락처","비고","소속","점수"].every(x=>selfCols.includes(x)),zeroFalsePreserved:selfMapped.some(x=>x.점수===0)&&selfMapped.some(x=>x.비고===false),requiredColumns:REQUIRED_EXPORT_COLUMNS.every(x=>selfCols.includes(x))});
