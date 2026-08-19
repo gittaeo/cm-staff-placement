@@ -348,10 +348,10 @@ function goManage(staffId,siteId,placementId){
 function calcOverlaps(inputPlacements){
   const byStaff={};
   const source=Array.isArray(inputPlacements)?inputPlacements:(Array.isArray(state.placements)?state.placements:[]);
-  source.forEach(p=>{ (byStaff[p.staffId]=byStaff[p.staffId]||[]).push(p); });
+  source.forEach(p=>{ const key=p.staffId+"||"+p.kind; (byStaff[key]=byStaff[key]||[]).push(p); });
   const out=[];
-  Object.keys(byStaff).forEach(sid=>{
-    const ps=byStaff[sid].filter(p=>p.start&&p.end);
+  Object.keys(byStaff).forEach(key=>{
+    const ps=byStaff[key].filter(p=>p.start&&p.end);
     const ranges=[];
     for(let i=0;i<ps.length;i++){
       for(let j=i+1;j<ps.length;j++){
@@ -362,15 +362,9 @@ function calcOverlaps(inputPlacements){
         ranges.push({a,b,start:a.start<b.start?b.start:a.start, end:a.end<b.end?a.end:b.end});
       }
     }
-    if(ranges.length) out.push({staffId:sid, staff:staffById(sid), conflicts:ranges});
+    if(ranges.length){ const sid=ps[0].staffId; out.push({staffId:sid,kind:ps[0].kind,staff:staffById(sid),conflicts:ranges}); }
   });
   return out;
-}
-function overlapRangesFor(sid,inputPlacements){
-  const hits=calcOverlaps(inputPlacements).filter(o=>o.staffId===sid);
-  const ranges=[];
-  hits.forEach(h=>h.conflicts.forEach(c=>ranges.push({start:c.start,end:c.end})));
-  return ranges;
 }
 
 function renderOverview(){
@@ -386,6 +380,12 @@ function renderOverview(){
   placements.forEach(p=>{ if(p.start&&p.end&&p.start<=t&&t<=p.end) onStaff.add(p.staffId); });
   const overlaps=calcOverlaps(placements);
   const ovCount=overlaps.reduce((s,o)=>s+o.conflicts.length,0);
+  const ovPlacementIds=new Set();
+  const overlapRangesByPlacement=new Map();
+  overlaps.forEach(o=>o.conflicts.forEach(c=>{
+    ovPlacementIds.add(c.a.id);ovPlacementIds.add(c.b.id);
+    [c.a.id,c.b.id].forEach(id=>{if(!overlapRangesByPlacement.has(id))overlapRangesByPlacement.set(id,[]);overlapRangesByPlacement.get(id).push({start:c.start,end:c.end});});
+  }));
 
   let filtered=[...placements];
   if(ui.ovSite!=="all") filtered=filtered.filter(p=>p.siteId===ui.ovSite);
@@ -394,8 +394,7 @@ function renderOverview(){
     filtered=filtered.filter(p=>{ const st=staffById(p.staffId); return st && (st.name.includes(q)||st.job.includes(q)); });
   }
   if(ui.ovKind!=="all") filtered=filtered.filter(p=>p.kind===ui.ovKind);
-  const ovStaffIds=new Set(overlaps.map(o=>o.staffId));
-  if(ui.ovOverlapOnly) filtered=filtered.filter(p=>ovStaffIds.has(p.staffId));
+  if(ui.ovOverlapOnly) filtered=filtered.filter(p=>ovPlacementIds.has(p.id));
 
   const cards=
   '<div class="cards">'+
@@ -448,7 +447,7 @@ function renderOverview(){
         '<div class="tl-meta">컨소시엄: '+esc((site.consortium||[]).join(", "))+'</div></div></div>';
       ps.forEach(p=>{
         const st=staffById(p.staffId);
-        const ov=overlapRangesFor(p.staffId,placements).filter(r=>r.start<=p.end&&r.end>=p.start);
+        const ov=overlapRangesByPlacement.get(p.id)||[];
         const stt=statusOf(p);
         const isOv=ov.length>0 && !(ui.ovOverlapOnly);
         const overlays=ov.map(r=>'<div class="ov-overlay" style="'+barStyle(r.start,r.end,rng)+'"></div>').join("");
@@ -476,11 +475,12 @@ function renderOverview(){
 
 function detailRows(filtered,overlapResults){
   if(!filtered.length) return '<tr><td colspan="8" class="empty">표시할 배치가 없습니다.</td></tr>';
-  const ovStaff=new Set((Array.isArray(overlapResults)?overlapResults:calcOverlaps()).map(o=>o.staffId));
+  const ovPlacementIds=new Set();
+  (Array.isArray(overlapResults)?overlapResults:calcOverlaps()).forEach(o=>o.conflicts.forEach(c=>{ovPlacementIds.add(c.a.id);ovPlacementIds.add(c.b.id);}));
   return filtered.sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1)).map(p=>{
     const st=staffById(p.staffId), site=siteById(p.siteId);
     const stt=statusOf(p);
-    const isOv=ovStaff.has(p.staffId);
+    const isOv=ovPlacementIds.has(p.id);
     return '<tr class="row-click '+(isOv?"warn-row":"")+'" data-staff="'+p.staffId+'" data-site="'+p.siteId+'" onclick="goManage(this.dataset.staff,this.dataset.site,'+"'"+p.id+"'"+')">'+
       '<td><b>'+esc(st.name)+'</b>'+(p.demo?' <span class="badge demo">예시</span>':'')+'</td>'+
       '<td>'+esc(st.job)+'</td><td>'+esc(site.name)+'</td>'+
@@ -1522,7 +1522,8 @@ function buildFacts(){
   }));
   const changes=state.changes.map(c=>({
     staffId:c.staffId, staffName:staffById(c.staffId)?staffById(c.staffId).name:"?",
-    before:c.before, after:c.after, changeDate:c.changeDate, changeReason:c.changeReason||"변경 사유 미기록"
+    before:c.before, after:c.after, changeDate:c.changeDate, changeReason:c.changeReason||"변경 사유 미기록",
+    basis:changeBasis(c), demo:!!c.demo
   }));
   const diffs=[];
   const byStaff={};
@@ -1554,6 +1555,15 @@ function buildFacts(){
     });
   });
   return {overlaps,changes,diffs};
+}
+function changeBasis(c){
+  if(!c||!c.after) return ["변경 후 정보 확인 필요"];
+  if(!c.before) return ["배치 관리에서 신규 배치와 변경 사유를 함께 저장한 기록"];
+  const rules=[];
+  if(String(c.before.siteName||"").trim()!==String(c.after.siteName||"").trim()) rules.push("현장명 변경: "+(c.before.siteName||"[없음]")+" → "+(c.after.siteName||"[없음]"));
+  if(c.before.start&&c.after.start&&c.before.start!==c.after.start) rules.push("시작일 변경: "+c.before.start+" → "+c.after.start+(c.after.start>c.before.start?" (뒤로 이동)":" (앞으로 이동)"));
+  if(c.before.end&&c.after.end&&c.before.end!==c.after.end) rules.push("종료일 변경: "+c.before.end+" → "+c.after.end+(c.after.end>c.before.end?" (연장)":" (단축)"));
+  return rules.length?rules:["배치 관리에서 저장된 변경 이력(현장·기간 차이 없음)"];
 }
 function ruleSummary(kind,item){
   if(kind==="overlap") return item.staffName+"님이 "+item.conflicts[0].siteA+"와 "+item.conflicts[0].siteB+"에 동시에 배치되어 있습니다. 겹치는 기간은 "+fmt(item.conflicts[0].start)+" ~ "+fmt(item.conflicts[0].end)+" ("+item.conflicts[0].days+"일)입니다.";
@@ -1619,7 +1629,7 @@ function renderAI(){
     '<div class="section-title"><h2>AI 점검·요약</h2><p>저장된 배치 정보를 분석해 중복 배치, 변경 내용, 계약/실제배치 차이를 보여줍니다.</p></div>'+
     '<div class="panel"><div class="panel-head"><h3>점검 실행</h3><div class="spacer"></div>'+
     '<div class="btn-row"><button class="btn primary" id="ai-run-btn" onclick="runAI()">▶ AI 점검 실행</button></div></div>'+
-    '<div class="panel-body">'+last+'<div class="hint" style="margin-top:6px">'+(ext?'<span style="color:var(--red);font-weight:600">⚠ 외부 전송 ON — 요약을 위해 데이터가 Google로 전송됩니다.</span> ': '<span style="color:#17805f;font-weight:600">● 완전 로컬 — 데이터가 브라우저 밖으로 나가지 않습니다.</span> ')+'중복 인원·계약/실제 차이 판별은 로컬 계산이라 외부 없이도 정확합니다. AI는 데이터에 없는 내용을 만들지 않으며, 판단이 어려운 항목은 [확인 필요]로 표시됩니다.</div></div></div>'+
+    '<div class="panel-body">'+last+'<div class="hint" style="margin-top:6px">'+(ext?'<span style="color:var(--red);font-weight:600">⚠ 외부 전송 ON — 요약을 위해 데이터가 Google로 전송됩니다.</span> ': '<span style="color:#17805f;font-weight:600">● 완전 로컬 — 데이터가 브라우저 밖으로 나가지 않습니다.</span> ')+'중복 인원·계약/실제 차이 판별은 로컬 계산이라 외부 없이도 정확합니다. AI는 데이터에 없는 내용을 만들지 않으며, 판단이 어려운 항목은 [확인 필요]로 표시됩니다.</div><div class="import-note" style="margin-top:10px"><b>배치 변경 내용의 기준</b> · 엑셀 문장을 해석해 추정하지 않습니다. 배치 관리에서 저장된 변경 전·후의 현장명, 시작일, 종료일을 직접 비교합니다. 변경 사유는 사용자가 입력한 원문이며, 새 엑셀 업로드만으로 이전 파일과의 변경을 자동 추론하지 않습니다.</div></div></div>'+
     '<div id="ai-results"><div class="panel"><div class="empty">[AI 점검 실행] 버튼을 누르면 결과가 여기에 표시됩니다.</div></div></div>';
 }
 async function runAI(){
@@ -1646,9 +1656,11 @@ function aiItemOverlap(o){
 }
 function aiItemChange(ch){
   const bef=ch.before? esc(ch.before.siteName)+'<br><span class="mono">'+fmt(ch.before.start)+' ~ '+fmt(ch.before.end)+'</span>' : '<span class="faint">신규 배치</span>';
+  const basis=(Array.isArray(ch.basis)?ch.basis:[]).map(x=>'<li>'+esc(x)+'</li>').join('');
   return '<div class="ai-item"><h4>'+esc(ch.staffName)+' <span class="badge amber">변경</span>'+(ch.demo?' <span class="badge demo">예시</span>':'')+'</h4>'+
     '<div class="grid3"><div><b>변경 전</b><br>'+bef+'</div><div><b>변경 후</b><br>'+esc(ch.after.siteName)+'<br><span class="mono">'+fmt(ch.after.start)+' ~ '+fmt(ch.after.end)+'</span></div><div><b>변경일</b><br>'+fmt(ch.changeDate)+'</div></div>'+
-    '<div class="small muted"><b>변경 사유</b> · '+esc(ch.changeReason)+'</div>'+
+    '<div class="small" style="margin-top:8px"><b>판정 근거(필드 직접 비교)</b><ul style="margin:4px 0 6px 18px">'+(basis||'<li>변경 필드 확인 필요</li>')+'</ul></div>'+
+    '<div class="small muted"><b>사용자가 입력한 변경 사유 원문</b> · '+esc(ch.changeReason)+'</div>'+
     '<div class="ai-summary">'+esc(ch.summary)+'</div></div>';
 }
 function aiItemDiff(d){
@@ -1673,6 +1685,7 @@ function renderAIResults(r,used){
     '<div class="ai-card-body">'+(r.overlaps.length? r.overlaps.map(aiItemOverlap).join("") : '<div class="empty" style="padding:18px">서로 다른 현장에 배치기간이 겹치는 직원이 없습니다.</div>')+'</div></div>';
 
   html+='<div class="ai-card"><div class="ai-card-head"><h3>2. 배치 변경 내용 <span class="muted small">('+r.changes.length+'건)</span></h3></div>'+
+    '<div class="import-note" style="margin:12px"><b>자료 기준</b> · 배치 관리에서 저장된 변경 이력만 표시합니다. 현장명·시작일·종료일의 변경 전후 값을 직접 비교하며, 변경 사유 문구는 판정값이 아니라 사용자 입력 원문입니다.</div>'+
     '<div class="ai-card-body">'+(r.changes.length? r.changes.map(aiItemChange).join("") : '<div class="empty" style="padding:18px">기록된 배치 변경이 없습니다.</div>')+'</div></div>';
 
   html+='<div class="ai-card"><div class="ai-card-head"><h3>3. 계약배치 vs 실제배치 <span class="muted small">('+r.diffs.length+'건)</span></h3></div>'+
@@ -1768,13 +1781,13 @@ function ensureLegacyState(){
   });
 }
 function calculateAssignmentOverlaps(rows){
-  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r)+"||"+kindCode(r.assignmentType);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
   groups.forEach((list,key)=>{for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i],b=list[j];if(siteKey(a.siteName)===siteKey(b.siteName))continue;if(a.startDate<=b.endDate&&b.startDate<=a.endDate)out.push({employeeKey:key,a,b,start:a.startDate>b.startDate?a.startDate:b.startDate,end:a.endDate<b.endDate?a.endDate:b.endDate});}}); return out;
 }
 function overlapSet(){ const s=new Set(); calculateAssignmentOverlaps(allAssignments).forEach(x=>{s.add(x.a.rowId);s.add(x.b.rowId);});return s; }
 
 async function parseFiles(files,append){
-  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
+  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];state.changes=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
   const seen=new Set(allAssignments.filter(r=>!r.excludedReason).map(sourceFingerprint));
   for(const file of list){ const fd={file:file.name,sheets:0,rawRows:0,accepted:0,excluded:0,error:""}; importReport.files++;
     try{
@@ -1824,7 +1837,7 @@ async function parseFiles(files,append){
 
 window.handleUpload=function(files){return parseFiles(files,false);};
 window.addUploadFiles=function(files){return parseFiles(files,true);};
-window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
+window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];state.changes=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
 window.dropUpload=function(ev){ev.preventDefault();parseFiles(ev.dataTransfer.files,allAssignments.length>0);};
 
 window.renderUploadPanel=function(){ const host=document.getElementById("ov-upload");if(!host)return;const r=importReport; const has=r.files>0;
@@ -1862,7 +1875,7 @@ window.handleOverviewSearch=function(event){const value=safe(event&&event.target
 window.setOverviewKindFilter=function(kind){ui.ovKind=["contract","actual","pending"].includes(kind)?kind:"all";renderOverview();};
 window.setOverviewSheetFilter=function(key){ui.ovSheet=key||"all";ui.ovSite="all";ui.ovOverlapOnly=false;renderOverview();};
 window.renderOverview=function(){ oldRenderOverview(); const search=document.getElementById("ov-search");if(search){search.placeholder="직원명, 직원번호 또는 직무";}
-  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(allAssignments);const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("서로 다른 현장 간 중복 배치 "+overlaps.length+"건을 확인해 주세요."):"현재 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
+  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(selectedOverviewAssignments());const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("같은 배치 구분에서 서로 다른 현장 간 중복 "+overlaps.length+"건을 확인해 주세요."):"현재 선택 범위에서 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
   document.querySelectorAll(".mono").forEach(x=>{x.style.whiteSpace="nowrap";x.style.minWidth="104px";}); document.querySelectorAll(".panel-body.tight").forEach(x=>x.style.overflowX="auto");
 };
 function selectedOverviewAssignments(){if(ui.ovSheet==="all")return allAssignments;return allAssignments.filter(x=>(safe(x.sourceFile,"직접 입력")+"||"+safe(x.sourceSheet,"배치 관리"))===ui.ovSheet);}

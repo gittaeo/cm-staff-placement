@@ -79,13 +79,13 @@ function ensureLegacyState(){
   });
 }
 function calculateAssignmentOverlaps(rows){
-  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r)+"||"+kindCode(r.assignmentType);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
   groups.forEach((list,key)=>{for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i],b=list[j];if(siteKey(a.siteName)===siteKey(b.siteName))continue;if(a.startDate<=b.endDate&&b.startDate<=a.endDate)out.push({employeeKey:key,a,b,start:a.startDate>b.startDate?a.startDate:b.startDate,end:a.endDate<b.endDate?a.endDate:b.endDate});}}); return out;
 }
 function overlapSet(){ const s=new Set(); calculateAssignmentOverlaps(allAssignments).forEach(x=>{s.add(x.a.rowId);s.add(x.b.rowId);});return s; }
 
 async function parseFiles(files,append){
-  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
+  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];state.changes=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
   const seen=new Set(allAssignments.filter(r=>!r.excludedReason).map(sourceFingerprint));
   for(const file of list){ const fd={file:file.name,sheets:0,rawRows:0,accepted:0,excluded:0,error:""}; importReport.files++;
     try{
@@ -135,7 +135,7 @@ async function parseFiles(files,append){
 
 window.handleUpload=function(files){return parseFiles(files,false);};
 window.addUploadFiles=function(files){return parseFiles(files,true);};
-window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
+window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];state.changes=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
 window.dropUpload=function(ev){ev.preventDefault();parseFiles(ev.dataTransfer.files,allAssignments.length>0);};
 
 window.renderUploadPanel=function(){ const host=document.getElementById("ov-upload");if(!host)return;const r=importReport; const has=r.files>0;
@@ -173,7 +173,7 @@ window.handleOverviewSearch=function(event){const value=safe(event&&event.target
 window.setOverviewKindFilter=function(kind){ui.ovKind=["contract","actual","pending"].includes(kind)?kind:"all";renderOverview();};
 window.setOverviewSheetFilter=function(key){ui.ovSheet=key||"all";ui.ovSite="all";ui.ovOverlapOnly=false;renderOverview();};
 window.renderOverview=function(){ oldRenderOverview(); const search=document.getElementById("ov-search");if(search){search.placeholder="직원명, 직원번호 또는 직무";}
-  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(allAssignments);const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("서로 다른 현장 간 중복 배치 "+overlaps.length+"건을 확인해 주세요."):"현재 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
+  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(selectedOverviewAssignments());const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("같은 배치 구분에서 서로 다른 현장 간 중복 "+overlaps.length+"건을 확인해 주세요."):"현재 선택 범위에서 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
   document.querySelectorAll(".mono").forEach(x=>{x.style.whiteSpace="nowrap";x.style.minWidth="104px";}); document.querySelectorAll(".panel-body.tight").forEach(x=>x.style.overflowX="auto");
 };
 function selectedOverviewAssignments(){if(ui.ovSheet==="all")return allAssignments;return allAssignments.filter(x=>(safe(x.sourceFile,"직접 입력")+"||"+safe(x.sourceSheet,"배치 관리"))===ui.ovSheet);}
