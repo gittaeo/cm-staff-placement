@@ -247,6 +247,7 @@ let ui = {
   mSiteFilter: "all",
   mStaffFilter: "all",
   mKindFilter: "all",
+  mSupportFilter: "all",
   aiResult: null,
   aiSource: "rule",
   aiTime: null,
@@ -338,6 +339,7 @@ function goManage(staffId,siteId,placementId){
   ui.mSub="placements";
   ui.mStaffFilter = staffId || "all";
   ui.mSiteFilter = siteId || "all";
+  ui.mSupportFilter = "all";
   switchTab("manage");
   renderManage();
   if(placementId){
@@ -1057,16 +1059,19 @@ function renderPlacementMgr(){
   const siteOpt='<option value="all">전체 현장</option>'+state.sites.map(s=>'<option value="'+s.id+'"'+(ui.mSiteFilter===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
   const staffOpt='<option value="all">전체 직원</option>'+state.staff.map(s=>'<option value="'+s.id+'"'+(ui.mStaffFilter===s.id?" selected":"")+'>'+esc(s.name)+'</option>').join("");
   const kindOpt=["all","contract","actual","pending"].map(k=>'<option value="'+k+'"'+(ui.mKindFilter===k?" selected":"")+'>'+(k==="all"?"전체 구분":KIND[k])+'</option>').join("");
+  const supportOpt=[['all','전체 인력'],['technical','기술지원만'],['regular','일반 인력만']].map(([k,label])=>'<option value="'+k+'"'+(ui.mSupportFilter===k?' selected':'')+'>'+label+'</option>').join('');
   let list=[...state.placements];
   if(ui.mSiteFilter!=="all") list=list.filter(p=>p.siteId===ui.mSiteFilter);
   if(ui.mStaffFilter!=="all") list=list.filter(p=>p.staffId===ui.mStaffFilter);
   if(ui.mKindFilter!=="all") list=list.filter(p=>p.kind===ui.mKindFilter);
+  if(ui.mSupportFilter==="technical") list=list.filter(isTechnicalSupportPlacement);
+  if(ui.mSupportFilter==="regular") list=list.filter(p=>!isTechnicalSupportPlacement(p));
   list.sort((a,b)=>(a.staffId<b.staffId?-1:1)||(a.start<b.start?-1:1));
   const rows=list.map(p=>{
     const st=staffById(p.staffId), site=siteById(p.siteId);
     const ch=state.changes.filter(c=>c.staffId===p.staffId).slice(-1)[0];
     return '<tr id="placement-row-'+p.id+'">'+
-      '<td><b>'+esc(st?st.name:"-")+'</b>'+(p.demo?' <span class="badge demo">예시</span>':'')+'</td>'+
+      '<td><b>'+esc(st?st.name:"-")+'</b>'+(isTechnicalSupportPlacement(p)?' <span class="badge confirm">기술지원</span>':'')+(p.demo?' <span class="badge demo">예시</span>':'')+'</td>'+
       '<td>'+esc(st?st.job:"-")+'</td>'+
       '<td>'+esc(site?site.name:"-")+'</td>'+
       '<td><span class="chip '+KIND_COLOR[p.kind]+'">'+KIND[p.kind]+'</span></td>'+
@@ -1075,11 +1080,12 @@ function renderPlacementMgr(){
       '<td><div class="btn-row"><button class="btn sm" onclick="openPlacementModal(\''+p.id+'\')">편집</button><button class="btn sm danger" onclick="delPlacement(\''+p.id+'\')">삭제</button></div></td>'+
     '</tr>';
   }).join("");
-  return '<div class="panel"><div class="panel-head"><h3>직원 배치 목록</h3><div class="spacer"></div>'+
+  return '<div class="panel"><div class="panel-head"><h3>직원 배치 목록 <span class="muted small">('+list.length+'건)</span></h3><div class="spacer"></div>'+
   '<div class="filters">'+
     '<label>현장 <select onchange="ui.mSiteFilter=this.value;renderManage()">'+siteOpt+'</select></label>'+
     '<label>직원 <select onchange="ui.mStaffFilter=this.value;renderManage()">'+staffOpt+'</select></label>'+
     '<label>구분 <select onchange="ui.mKindFilter=this.value;renderManage()">'+kindOpt+'</select></label>'+
+    '<label>T/O <select onchange="ui.mSupportFilter=this.value;renderManage()">'+supportOpt+'</select></label>'+
     '<button class="btn primary sm" onclick="openPlacementModal()">+ 배치 추가</button>'+
   '</div></div>'+
   '<div class="panel-body tight"><table><thead><tr><th>직원</th><th>직무/직급</th><th>현장</th><th>구분</th><th>시작일</th><th>종료일</th><th>최근 변경</th><th>관리</th></tr></thead>'+
