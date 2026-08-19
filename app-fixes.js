@@ -85,7 +85,7 @@ function calculateAssignmentOverlaps(rows){
 function overlapSet(){ const s=new Set(); calculateAssignmentOverlaps(allAssignments).forEach(x=>{s.add(x.a.rowId);s.add(x.b.rowId);});return s; }
 
 async function parseFiles(files,append){
-  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
+  const list=Array.from(files||[]); if(!list.length)return; if(!append){allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};}
   const seen=new Set(allAssignments.filter(r=>!r.excludedReason).map(sourceFingerprint));
   for(const file of list){ const fd={file:file.name,sheets:0,rawRows:0,accepted:0,excluded:0,error:""}; importReport.files++;
     try{
@@ -135,10 +135,15 @@ async function parseFiles(files,append){
 
 window.handleUpload=function(files){return parseFiles(files,false);};
 window.addUploadFiles=function(files){return parseFiles(files,true);};
-window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
+window.resetImportedData=function(){if(!confirm("불러온 데이터를 모두 초기화할까요?"))return;allAssignments=[];ui.ovSheet="all";importReport={files:0,sheets:0,rawRows:0,accepted:0,excluded:[],skippedSheets:[],duplicateSource:0,errors:[],details:[]};ensureLegacyState();ui.import={step:"pick",result:null};renderOverview();};
 window.dropUpload=function(ev){ev.preventDefault();parseFiles(ev.dataTransfer.files,allAssignments.length>0);};
 
 window.renderUploadPanel=function(){ const host=document.getElementById("ov-upload");if(!host)return;const r=importReport; const has=r.files>0;
+  const sheetMap=new Map();
+  allAssignments.forEach(x=>{const file=safe(x.sourceFile,"직접 입력"),sheet=safe(x.sourceSheet,"배치 관리"),key=file+"||"+sheet,item=sheetMap.get(key)||{key,file,sheet,accepted:0,excluded:0,skipped:false};if(x.excludedReason)item.excluded++;else item.accepted++;sheetMap.set(key,item);});
+  (r.skippedSheets||[]).forEach(x=>{const file=safe(x.file),sheet=safe(x.sheet),key=file+"||"+sheet,item=sheetMap.get(key)||{key,file,sheet,accepted:0,excluded:0,skipped:true};item.skipped=true;sheetMap.set(key,item);});
+  const sheetSummaryRows=Array.from(sheetMap.values()).map(x=>'<tr><td>'+esc(x.file)+'</td><td>'+esc(x.sheet)+'</td><td>'+x.accepted+'</td><td>'+x.excluded+'</td><td>'+(x.skipped?'<span class="chip gray">비배치 시트</span>':'<span class="chip green">배치 시트</span>')+'</td><td>'+(x.accepted?'<button type="button" class="btn sm" data-sheet-key="'+esc(x.key)+'" onclick="setOverviewSheetFilter(this.dataset.sheetKey)">이 시트 보기</button>':'-')+'</td></tr>').join('');
+  const sheetSummary=sheetSummaryRows?'<details class="review-list" open><summary><b>시트별 처리 현황 '+sheetMap.size+'개</b> <span class="muted small">시트 하나를 선택하거나 현황 필터에서 전체 시트를 통합해 볼 수 있습니다.</span></summary><div class="preview-scroll" style="margin-top:10px"><table><thead><tr><th>원본 파일</th><th>원본 시트</th><th>정상 배치</th><th>제외 행</th><th>분류</th><th>보기</th></tr></thead><tbody>'+sheetSummaryRows+'</tbody></table></div></details>':'';
   const excludedRows=(r.excluded||[]).map(x=>'<tr><td>'+esc(x.sourceFile)+'</td><td>'+esc(x.sourceSheet)+'</td><td>'+esc(x.sourceRow)+'</td><td>'+esc(x.employeeName||'[없음]')+'</td><td>'+esc(x.siteName||'[없음]')+'</td><td>'+esc(x.assignmentType||'[구분 없음]')+'</td><td>'+esc(x.startDate||'')+' ~ '+esc(x.endDate||'')+'</td><td><span class="chip amber">'+esc(x.excludedReason||'확인 필요')+'</span></td></tr>').join('');
   const skippedRows=(r.skippedSheets||[]).map(x=>'<tr><td>'+esc(x.file)+'</td><td>'+esc(x.sheet)+'</td><td colspan="5">배치표가 아닌 시트 · 내용이 있는 행 '+esc(x.rows)+'개</td><td><span class="chip gray">'+esc(x.reason)+'</span></td></tr>').join('');
   const reviewCount=(r.excluded||[]).length+(r.skippedSheets||[]).length;
@@ -148,7 +153,7 @@ window.renderUploadPanel=function(){ const host=document.getElementById("ov-uplo
   '<div class="btn-row" style="margin-top:12px"><button class="btn primary sm" onclick="document.getElementById(\'xlsx-file\').click()">'+(has?'파일 추가':'파일 선택')+'</button>'+(has?'<button class="btn danger sm" onclick="resetImportedData()">불러온 데이터 초기화</button>':'')+'</div>'+
   '<div class="import-note" style="margin-top:12px">엑셀 데이터는 외부로 전송되지 않으며 현재 브라우저 메모리에서만 처리됩니다.</div>'+
   (has?'<div class="cards"><div class="card"><div class="num">'+r.files+'</div><div class="lbl">불러온 파일</div></div><div class="card"><div class="num">'+r.sheets+'</div><div class="lbl">확인한 시트</div></div><div class="card"><div class="num">'+r.rawRows+'</div><div class="lbl">전체 원본 행</div></div><div class="card ok"><div class="num">'+r.accepted+'</div><div class="lbl">정상 배치</div></div><div class="card amber"><div class="num">'+r.excluded.length+'</div><div class="lbl">제외 행</div></div><div class="card"><div class="num">'+r.duplicateSource+'</div><div class="lbl">중복 원본</div></div></div>':'')+
-  (has&&reviewCount?'<details class="review-list"><summary><b>비배치·확인 필요 목록 '+reviewCount+'건</b> <span class="muted small">클릭하여 원본 위치와 사유 확인</span></summary><div class="preview-scroll" style="margin-top:10px;max-height:360px"><table><thead><tr><th>원본 파일</th><th>원본 시트</th><th>원본 행</th><th>직원명</th><th>현장명</th><th>구분</th><th>배치기간</th><th>확인 사유</th></tr></thead><tbody>'+excludedRows+skippedRows+'</tbody></table></div></details>':'')+
+  (has?sheetSummary:'')+(has&&reviewCount?'<details class="review-list"><summary><b>비배치·확인 필요 목록 '+reviewCount+'건</b> <span class="muted small">클릭하여 원본 위치와 사유 확인</span></summary><div class="preview-scroll" style="margin-top:10px;max-height:360px"><table><thead><tr><th>원본 파일</th><th>원본 시트</th><th>원본 행</th><th>직원명</th><th>현장명</th><th>구분</th><th>배치기간</th><th>확인 사유</th></tr></thead><tbody>'+excludedRows+skippedRows+'</tbody></table></div></details>':'')+
   (r.errors.length?'<div class="small" style="color:var(--red)">'+r.errors.map(x=>esc(x.file+' '+x.sheet+' · '+x.error)).join('<br>')+'</div>':'')+'</div></div>';
 };
 
@@ -166,11 +171,13 @@ function applyOverviewSearch(value){
 window.handleSearchCompositionEnd=function(event){composing=false;clearTimeout(searchTimer);applyOverviewSearch(event&&event.target&&event.target.value);};
 window.handleOverviewSearch=function(event){const value=safe(event&&event.target&&event.target.value);if(composing||event&&event.isComposing)return;clearTimeout(searchTimer);searchTimer=setTimeout(()=>applyOverviewSearch(value),40);};
 window.setOverviewKindFilter=function(kind){ui.ovKind=["contract","actual","pending"].includes(kind)?kind:"all";renderOverview();};
+window.setOverviewSheetFilter=function(key){ui.ovSheet=key||"all";ui.ovSite="all";ui.ovOverlapOnly=false;renderOverview();};
 window.renderOverview=function(){ oldRenderOverview(); const search=document.getElementById("ov-search");if(search){search.placeholder="직원명, 직원번호 또는 직무";}
   const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(allAssignments);const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("서로 다른 현장 간 중복 배치 "+overlaps.length+"건을 확인해 주세요."):"현재 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
   document.querySelectorAll(".mono").forEach(x=>{x.style.whiteSpace="nowrap";x.style.minWidth="104px";}); document.querySelectorAll(".panel-body.tight").forEach(x=>x.style.overflowX="auto");
 };
-window.toggleOverlapOnly=function(){const n=calculateAssignmentOverlaps(allAssignments).length;if(!n){ui.ovOverlapOnly=false;toast("현재 확인된 중복 배치가 없습니다. 전체 현황을 계속 표시합니다.","ok");renderOverview();return;}ui.ovOverlapOnly=!ui.ovOverlapOnly;renderOverview();};
+function selectedOverviewAssignments(){if(ui.ovSheet==="all")return allAssignments;return allAssignments.filter(x=>(safe(x.sourceFile,"직접 입력")+"||"+safe(x.sourceSheet,"배치 관리"))===ui.ovSheet);}
+window.toggleOverlapOnly=function(){const n=calculateAssignmentOverlaps(selectedOverviewAssignments()).length;if(!n){ui.ovOverlapOnly=false;toast("현재 선택 범위에는 중복 배치가 없습니다. 전체 현황을 계속 표시합니다.","ok");renderOverview();return;}ui.ovOverlapOnly=!ui.ovOverlapOnly;renderOverview();};
 
 function assignmentForPlacement(p){return p&&p.rowRef?p.rowRef:allAssignments.find(r=>r.rowId===p.id);}
 const oldStaffById=staffById;window.staffById=function(id){return oldStaffById(id)||{id,name:"[확인 필요]",employeeId:"",job:""};};
@@ -179,7 +186,7 @@ window.fmt=function(d){return validISO(d)?d:"날짜 확인 필요";};
 window.statusOf=function(p){const r=assignmentForPlacement(p)||{startDate:p&&p.start,endDate:p&&p.end};const t=statusLabel(r);return {t,cls:t==="배치 중"?"sd-on":t==="배치 예정"?"sd-will":"sd-end"};};
 
 function matchesSearch(r,q){q=normalizeText(q).toLowerCase();if(!q)return true;return [r.employeeName,r.employeeId,r.role].some(v=>normalizeText(v).toLowerCase().includes(q));}
-const originalDetailRows=detailRows;window.detailRows=function(filtered){const q=ui.ovSearch;const safeRows=(Array.isArray(filtered)?filtered:[]).filter(p=>{const r=assignmentForPlacement(p);return !r||matchesSearch(r,q);});if(!safeRows.length&&q)return '<tr><td colspan="8" class="empty">검색 조건과 일치하는 직원이 없습니다.<br>검색어 또는 필터를 변경해 주세요.</td></tr>';return originalDetailRows(safeRows);};
+const originalDetailRows=detailRows;window.detailRows=function(filtered,overlapResults){const q=ui.ovSearch;const safeRows=(Array.isArray(filtered)?filtered:[]).filter(p=>{const r=assignmentForPlacement(p);return !r||matchesSearch(r,q);});if(!safeRows.length&&q)return '<tr><td colspan="8" class="empty">검색 조건과 일치하는 직원이 없습니다.<br>검색어 또는 필터를 변경해 주세요.</td></tr>';return originalDetailRows(safeRows,overlapResults);};
 
 window.renderHistory=function(){
   const groups=new Map();allAssignments.filter(r=>!r.excludedReason).forEach(r=>{const k=employeeKey(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
