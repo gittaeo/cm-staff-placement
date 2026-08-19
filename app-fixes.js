@@ -69,17 +69,23 @@ function findMultiRowPlacementLayout(sheet){
   return null;
 }
 function sourceFingerprint(r){ return [employeeKey(r),siteKey(r.siteName),r.startDate,r.endDate,normalizeText(r.assignmentType)].join("|"); }
+function isTechnicalSupportAssignment(r){
+  if(!r)return false;
+  if(normalizeText(r.role).includes("기술지원"))return true;
+  return Object.entries(r.originalData||{}).some(([key,value])=>{const header=normalizeHeader(key);return (header==="to"||header.endsWith("to"))&&normalizeText(value).replace(/\s+/g,"").includes("기술지원");});
+}
 function ensureLegacyState(){
   const sites=new Map(),staff=new Map(); state.sites=[];state.staff=[];state.placements=[];state.changes=Array.isArray(state.changes)?state.changes:[];
   allAssignments.filter(r=>!r.excludedReason).forEach(r=>{
     const sk=siteKey(r.siteName); if(!sites.has(sk)){const x={id:uid(),name:r.siteName,hostRole:"확인필요",consortium:[],consortiumStaff:[]};sites.set(sk,x);state.sites.push(x);}
     const ek=employeeKey(r); if(!staff.has(ek)){const x={id:uid(),employeeId:r.employeeId,name:r.employeeName,job:r.role};staff.set(ek,x);state.staff.push(x);}
-    const p={id:r.rowId||uid(),siteId:sites.get(sk).id,staffId:staff.get(ek).id,kind:kindCode(r.assignmentType),start:r.startDate,end:r.endDate,sourceFile:r.sourceFile,sourceSheet:r.sourceSheet,sourceRow:r.sourceRow,originalData:r.originalData,rowRef:r};
+    r.technicalSupport=isTechnicalSupportAssignment(r);
+    const p={id:r.rowId||uid(),siteId:sites.get(sk).id,staffId:staff.get(ek).id,kind:kindCode(r.assignmentType),start:r.startDate,end:r.endDate,sourceFile:r.sourceFile,sourceSheet:r.sourceSheet,sourceRow:r.sourceRow,originalData:r.originalData,rowRef:r,technicalSupport:r.technicalSupport};
     r.rowId=p.id; state.placements.push(p);
   });
 }
 function calculateAssignmentOverlaps(rows){
-  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r)+"||"+kindCode(r.assignmentType);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  const groups=new Map(),out=[]; rows.filter(r=>!r.excludedReason&&!isTechnicalSupportAssignment(r)&&validISO(r.startDate)&&validISO(r.endDate)&&r.endDate>=r.startDate).forEach(r=>{const k=employeeKey(r)+"||"+kindCode(r.assignmentType);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
   groups.forEach((list,key)=>{for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i],b=list[j];if(siteKey(a.siteName)===siteKey(b.siteName))continue;if(a.startDate<=b.endDate&&b.startDate<=a.endDate)out.push({employeeKey:key,a,b,start:a.startDate>b.startDate?a.startDate:b.startDate,end:a.endDate<b.endDate?a.endDate:b.endDate});}}); return out;
 }
 function overlapSet(){ const s=new Set(); calculateAssignmentOverlaps(allAssignments).forEach(x=>{s.add(x.a.rowId);s.add(x.b.rowId);});return s; }
@@ -173,7 +179,7 @@ window.handleOverviewSearch=function(event){const value=safe(event&&event.target
 window.setOverviewKindFilter=function(kind){ui.ovKind=["contract","actual","pending"].includes(kind)?kind:"all";renderOverview();};
 window.setOverviewSheetFilter=function(key){ui.ovSheet=key||"all";ui.ovSite="all";ui.ovOverlapOnly=false;renderOverview();};
 window.renderOverview=function(){ oldRenderOverview(); const search=document.getElementById("ov-search");if(search){search.placeholder="직원명, 직원번호 또는 직무";}
-  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(selectedOverviewAssignments());const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("같은 배치 구분에서 서로 다른 현장 간 중복 "+overlaps.length+"건을 확인해 주세요."):"현재 선택 범위에서 확인된 중복 배치가 없습니다. 전체 배치 현황은 아래에서 계속 확인할 수 있습니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
+  const view=document.getElementById("view-overview");const overlaps=calculateAssignmentOverlaps(selectedOverviewAssignments());const msg=document.createElement("div");msg.className="import-note";msg.style.background=overlaps.length?'var(--red-bg)':'var(--green-bg)';msg.textContent=overlaps.length?("기술지원을 제외하고 같은 배치 구분에서 서로 다른 현장 간 중복 "+overlaps.length+"건을 확인해 주세요."):"현재 선택 범위에서 확인된 중복 배치가 없습니다. 기술지원은 중복 계산에서 제외되며 전체 현황에는 계속 표시됩니다.";const title=view.querySelector(".section-title");if(title)title.after(msg);
   document.querySelectorAll(".mono").forEach(x=>{x.style.whiteSpace="nowrap";x.style.minWidth="104px";}); document.querySelectorAll(".panel-body.tight").forEach(x=>x.style.overflowX="auto");
 };
 function selectedOverviewAssignments(){if(ui.ovSheet==="all")return allAssignments;return allAssignments.filter(x=>(safe(x.sourceFile,"직접 입력")+"||"+safe(x.sourceSheet,"배치 관리"))===ui.ovSheet);}
@@ -222,10 +228,10 @@ document.querySelector('.icon-btn[onclick="openSettings()"]')?.remove();
 const style=document.createElement("style");style.textContent='.mono,td:nth-child(5),td:nth-child(6){white-space:nowrap;min-width:108px}.panel-body.tight{overflow-x:auto}.tl-chart{min-width:720px;overflow:visible}.tl{min-width:1020px}.panel:has(.tl){overflow-x:auto}.bar{min-width:3px}.bar.blue{background:var(--blue)}.bar.green{background:var(--green)}.bar.amber{background:var(--amber)}.ov-overlay{background:repeating-linear-gradient(45deg,#e04444,#e04444 7px,#b91c1c 7px,#b91c1c 14px);border:2px solid #991b1b;box-shadow:0 1px 3px rgba(127,29,29,.35);z-index:5;opacity:1;pointer-events:none}.tl-meta span{white-space:nowrap}.kind-filter-group{display:inline-flex;gap:4px;padding:3px;background:var(--gray-bg);border-radius:8px}.kind-filter-btn{border:1px solid transparent;background:transparent;color:var(--gray);padding:5px 9px;border-radius:6px;font-size:12px;font-weight:700}.kind-filter-btn:hover{background:#fff}.kind-filter-btn.active{background:#fff;color:var(--primary);border-color:var(--primary-border);box-shadow:0 1px 2px rgba(0,0,0,.08)}';document.head.appendChild(style);
 
 // Preserve seed/manual rows in memory so all existing screens continue to work before an upload.
-window.__placementTest={normalizeText,normalizeHeader,parseDateValue,findHeader,findMultiRowPlacementLayout,employeeKey,siteKey,statusLabel,calculateAssignmentOverlaps,exportColumns,exportObject,exportOriginalValue,getRows:()=>allAssignments,getReport:()=>importReport,parseFiles,exportRows};
+window.__placementTest={normalizeText,normalizeHeader,parseDateValue,findHeader,findMultiRowPlacementLayout,employeeKey,siteKey,isTechnicalSupportAssignment,statusLabel,calculateAssignmentOverlaps,exportColumns,exportObject,exportOriginalValue,getRows:()=>allAssignments,getReport:()=>importReport,parseFiles,exportRows};
 const selfRows=Array.from({length:148},(_,i)=>({rowId:"self"+i,employeeId:"E"+(i%59),employeeName:"직원"+(i%59),siteName:"현장"+(i%59),role:"직무",startDate:"2025-01-01",endDate:"2025-01-01",assignmentType:"계약배치",originalData:i%2?{연락처:"",비고:false}:{소속:"A",점수:0},sourceFile:"test.xlsx",sourceSheet:"Sheet1",sourceRow:i+2,dateError:false,excludedReason:""}));
 const selfCols=exportColumns(selfRows),selfMapped=selfRows.map(r=>exportObject(r,new Set()));
 document.documentElement.dataset.placementSelfTest=JSON.stringify({inputRows:selfRows.length,exportRows:selfMapped.length,overlaps:calculateAssignmentOverlaps(selfRows).length,unionColumns:["연락처","비고","소속","점수"].every(x=>selfCols.includes(x)),zeroFalsePreserved:selfMapped.some(x=>x.점수===0)&&selfMapped.some(x=>x.비고===false),requiredColumns:REQUIRED_EXPORT_COLUMNS.every(x=>selfCols.includes(x))});
-allAssignments=(Array.isArray(state.placements)?state.placements:[]).map(p=>{const st=staffById(p.staffId),si=siteById(p.siteId);return {rowId:p.id,employeeId:safe(st.employeeId),employeeName:safe(st.name),siteName:safe(si.name),role:safe(st.job),startDate:safe(p.start),endDate:safe(p.end),assignmentType:kindLabel(KIND[p.kind]),sourceFile:safe(p.sourceFile,"직접 입력"),sourceSheet:safe(p.sourceSheet,"배치 관리"),sourceRow:p.sourceRow||0,originalData:p.originalData||{},dateError:!validISO(p.start)||!validISO(p.end)||p.end<p.start,excludedReason:""};});
+allAssignments=(Array.isArray(state.placements)?state.placements:[]).map(p=>{const st=staffById(p.staffId),si=siteById(p.siteId);const r={rowId:p.id,employeeId:safe(st.employeeId),employeeName:safe(st.name),siteName:safe(si.name),role:safe(st.job),startDate:safe(p.start),endDate:safe(p.end),assignmentType:kindLabel(KIND[p.kind]),sourceFile:safe(p.sourceFile,"직접 입력"),sourceSheet:safe(p.sourceSheet,"배치 관리"),sourceRow:p.sourceRow||0,originalData:p.originalData||{},dateError:!validISO(p.start)||!validISO(p.end)||p.end<p.start,excludedReason:""};r.technicalSupport=isTechnicalSupportAssignment(r);return r;});
 renderOverview();updatePrivacyBadge();
 })();
